@@ -75,12 +75,11 @@ export class Room {
     this.env = env;
     this.cap = Number(env.ROOM_CAP || 10);
 
-    // Numa conversa em andamento a sinalização fica calada por minutos, e
-    // operadora de celular derruba TCP ocioso sem avisar: o navegador segue
-    // achando que está na sala e não recebe mais nada. O cliente manda "ping",
-    // e esta resposta automática sai sem acordar o Durable Object — mantém a
-    // conexão viva e não conta como requisição cobrada.
-    state.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
+    // Quanto tempo sem dar sinal de vida antes de a pessoa ser considerada
+    // fora. O cliente manda "ping" a cada 25 s, então o padrão tolera três
+    // perdidos. Vêm do ambiente para dar para testar a expulsão sem esperar.
+    this.silencioMaximo = Number(env.SILENCIO_MAXIMO || 70_000);
+    this.intervaloRonda = Number(env.INTERVALO_RONDA || 30_000);
   }
 
   async fetch(request) {
@@ -102,7 +101,8 @@ export class Room {
     // conexões, e o tempo ocioso não é cobrado. O estado de cada participante
     // viaja anexado ao próprio socket para sobreviver a esse sono.
     this.state.acceptWebSocket(server);
-    server.serializeAttachment({ id, name, muted: false, sharing: false });
+    server.serializeAttachment({ id, name, muted: false, sharing: false, visto: Date.now() });
+    await this.agendarRonda();
 
     const peers = sockets.map((ws) => ws.deserializeAttachment()).filter(Boolean);
 
@@ -115,6 +115,15 @@ export class Room {
   async webSocketMessage(ws, raw) {
     const me = ws.deserializeAttachment();
     if (!me) return;
+
+    // Qualquer mensagem prova que a pessoa está viva; o ping serve para
+    // provar isso quando não há mais nada a dizer.
+    ws.serializeAttachment({ ...me, visto: Date.now() });
+
+    if (raw === 'ping') {
+      ws.send('pong');
+      return;
+    }
 
     let msg;
     try {
@@ -163,6 +172,29 @@ export class Room {
         break;
       }
     }
+  }
+
+  // A ronda existe porque o fechamento limpo é o caso feliz. Aba morta, link
+  // que caiu, celular que dormiu: nesses, o socket fica aberto do lado de cá e
+  // a pessoa vira um fantasma que ninguém consegue expulsar — e que continua
+  // ocupando uma das dez vagas.
+  async alarm() {
+    const limite = Date.now() - this.silencioMaximo;
+    let restantes = 0;
+
+    for (const ws of this.state.getWebSockets()) {
+      const quem = ws.deserializeAttachment();
+      if (quem && quem.visto > limite) { restantes++; continue; }
+      try { ws.close(1001, 'sem sinal'); } catch {}
+      if (quem) this.broadcast({ t: 'leave', id: quem.id }, ws);
+    }
+
+    if (restantes) await this.agendarRonda();
+  }
+
+  async agendarRonda() {
+    if (await this.state.storage.getAlarm()) return;
+    await this.state.storage.setAlarm(Date.now() + this.intervaloRonda);
   }
 
   webSocketClose(ws) {

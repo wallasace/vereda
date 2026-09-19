@@ -22,12 +22,14 @@ Não use isto em produção: sem limite de abuso, sem autenticação, e fala
 WebSocket no mínimo necessário para funcionar num navegador moderno.
 """
 
-import base64, hashlib, json, os, socket, ssl, struct, subprocess, sys, threading, uuid, urllib.request
+import base64, hashlib, json, os, socket, ssl, struct, subprocess, sys, threading, time, uuid, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 CAP = 10
+SILENCIO_MAXIMO = 70   # segundos sem sinal de vida até ser considerado fora
+INTERVALO_RONDA = 30
 
 salas = {}           # sala -> [conexão]
 trava = threading.Lock()
@@ -38,6 +40,7 @@ class Conexao:
         self.sock, self.nome = sock, nome
         self.id = uuid.uuid4().hex[:8]
         self.mudo = self.apresentando = False
+        self.visto = time.time()
         self.envio = threading.Lock()
 
     def resumo(self):
@@ -240,9 +243,9 @@ class Alça(BaseHTTPRequestHandler):
         if op != 0x1:
             return {}
         texto = dados.decode(errors="replace")
-        if texto == "ping":          # o mesmo que o setWebSocketAutoResponse do Worker faz
+        if texto == "ping":
             self.connection.sendall(bytes([0x81, 4]) + b"pong")
-            return {}
+            return {"t": "ping"}
         try:
             return json.loads(texto)
         except ValueError:
@@ -250,6 +253,9 @@ class Alça(BaseHTTPRequestHandler):
 
     def trata(self, sala, eu, m):
         t = m.get("t")
+        eu.visto = time.time()   # qualquer mensagem prova que está vivo
+        if t == "ping":
+            return
         if t == "signal":
             with trava:
                 alvo = next((c for c in salas.get(sala, []) if c.id == m.get("to")), None)
@@ -275,6 +281,27 @@ class Alça(BaseHTTPRequestHandler):
             difunde(sala, {"t": "state", "id": eu.id, "muted": eu.mudo, "sharing": eu.apresentando})
 
 
+def ronda():
+    """Aba morta, link caído, celular que dormiu: nesses casos o socket fica
+    aberto deste lado e a pessoa vira um fantasma que ocupa uma vaga. O mesmo
+    que o alarme do Durable Object faz no Worker."""
+    while True:
+        time.sleep(INTERVALO_RONDA)
+        limite = time.time() - SILENCIO_MAXIMO
+        with trava:
+            mortos = [(nome, c) for nome, fila in salas.items() for c in fila if c.visto < limite]
+        for nome, c in mortos:
+            print(f"  ! {c.nome} ({c.id}) sem sinal — removido de '{nome}'", flush=True)
+            with trava:
+                if c in salas.get(nome, []):
+                    salas[nome].remove(c)
+            try:
+                c.sock.close()
+            except OSError:
+                pass
+            difunde(nome, {"t": "leave", "id": c.id})
+
+
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     tls = "--tls" in sys.argv
@@ -295,6 +322,7 @@ if __name__ == "__main__":
     else:
         endereco = f"http://localhost:{porta}"
 
+    threading.Thread(target=ronda, daemon=True).start()
     print(f"Vereda (dev) em {endereco}", flush=True)
     print(f"  TURN: {'configurado' if ice()['turn'] else 'ausente (só STUN)'}", flush=True)
     if tls:
