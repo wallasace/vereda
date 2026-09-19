@@ -86,16 +86,24 @@ details.avancado > div { margin-top: 12px; }
 .erro { color: var(--red); font-size: 13px; margin-top: 10px; min-height: 18px; }
 
 /* ---------- sala ---------- */
-#sala { display: none; height: 100%; grid-template-rows: 1fr auto; }
+#sala { display: none; height: 100%; grid-template-rows: minmax(0, 1fr) auto; }
 #sala.ativa { display: grid; }
-.corpo { display: grid; grid-template-columns: 1fr 0; min-height: 0; transition: grid-template-columns .18s; }
-.corpo.com-chat { grid-template-columns: 1fr min(320px, 38vw); }
-.palco { position: relative; min-width: 0; display: flex; flex-direction: column; padding: 14px; gap: 12px; }
+.corpo { display: grid; grid-template-columns: minmax(0, 1fr) 0; grid-template-rows: minmax(0, 1fr);
+         min-height: 0; transition: grid-template-columns .18s; }
+.corpo.com-chat { grid-template-columns: minmax(0, 1fr) min(320px, 38vw); }
+.palco { position: relative; min-width: 0; min-height: 0; overflow: hidden;
+         display: flex; flex-direction: column; padding: 14px; gap: 12px; }
 
 #tela-wrap { flex: 1; min-height: 0; display: none; position: relative;
              background: #000; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
 #tela-wrap.ativa { display: block; }
 #tela { width: 100%; height: 100%; object-fit: contain; display: block; }
+.ocultar { position: absolute; top: 10px; right: 10px; padding: 6px 11px; border-radius: 8px;
+           border: 0; background: rgba(8,14,24,.72); color: #e8eef7; font-size: 12.5px;
+           font-weight: 550; backdrop-filter: blur(6px); }
+.ocultar:hover { background: rgba(8,14,24,.9); }
+.pilula.acao { cursor: pointer; color: var(--blue); border-color: var(--blue); }
+.pilula[hidden] { display: none; }
 .legenda { position: absolute; left: 10px; bottom: 10px; background: rgba(8,14,24,.72);
            color: #e8eef7; padding: 5px 10px; border-radius: 8px; font-size: 12.5px; backdrop-filter: blur(6px); }
 
@@ -133,7 +141,7 @@ details.avancado > div { margin-top: 12px; }
 
 /* ---------- chat ---------- */
 .chat { border-left: 1px solid var(--line); background: var(--panel);
-        display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+        display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .chat-lista { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .msg { font-size: 13.5px; word-break: break-word; }
 .msg .quem { font-weight: 650; font-size: 12px; color: var(--blue); }
@@ -165,7 +173,7 @@ details.avancado > div { margin-top: 12px; }
 .aviso-topo.ativo { display: block; }
 .aviso-topo button { background: transparent; border: 0; text-decoration: underline; font-weight: 650; }
 @media (max-width: 620px) {
-  .corpo.com-chat { grid-template-columns: 0 1fr; }
+  .corpo.com-chat { grid-template-columns: 0 minmax(0, 1fr); }
   .ctrl span { display: none; }
   .ctrl { padding: 11px 13px; }
 }
@@ -222,10 +230,12 @@ details.avancado > div { margin-top: 12px; }
     <div class="palco">
       <div class="info">
         <span class="pilula" id="i-sala"></span>
+        <span class="pilula acao" id="i-apresentando" hidden></span>
         <span class="pilula" id="i-rede">conectando</span>
       </div>
       <div id="tela-wrap"><video id="tela" autoplay playsinline muted></video>
         <div class="legenda" id="tela-legenda"></div>
+        <button class="ocultar" id="b-ocultar">Ocultar tela</button>
       </div>
       <div class="grade" id="grade"></div>
     </div>
@@ -637,18 +647,33 @@ function rede(id, estado) {
 
 // ---------------------------------------------------------------- palco e áudio
 
+// Esconder a tela é decisão de quem assiste e não sai daqui: quem apresenta
+// continua apresentando, e os outros continuam vendo.
+let telaOculta = false, ultimoApresentador = null;
+
 function palco() {
   const quem = [...pares.values()].find((p) => p.apresentando);
   const wrap = $('#tela-wrap');
   const corpo = $('#corpo');
+  const aviso = $('#i-apresentando');
+  const fluxo = quem ? (quem.sou ? telaStream : quem.tela) : null;
 
-  if (!quem || (!quem.sou && !quem.tela) || (quem.sou && !telaStream)) {
+  // Uma apresentação nova merece ser vista: a escolha de esconder valia para
+  // a anterior.
+  if ((quem ? quem.id : null) !== ultimoApresentador) {
+    ultimoApresentador = quem ? quem.id : null;
+    telaOculta = false;
+  }
+
+  if (!fluxo || telaOculta) {
     wrap.classList.remove('ativa');
     corpo.classList.remove('apresentando');
     $('#tela').srcObject = null;
+    aviso.hidden = !fluxo;
+    if (fluxo) aviso.textContent = (quem.sou ? 'sua tela' : quem.nome) + ' · mostrar';
     return;
   }
-  const fluxo = quem.sou ? telaStream : quem.tela;
+  aviso.hidden = true;
   if ($('#tela').srcObject !== fluxo) $('#tela').srcObject = fluxo;
   $('#tela-legenda').textContent = quem.sou ? 'sua tela' : `tela de ${quem.nome}`;
   wrap.classList.add('ativa');
@@ -784,6 +809,9 @@ function pararApresentar() {
   botaoTela();
   palco();
 }
+
+$('#b-ocultar').onclick = () => { telaOculta = true; palco(); };
+$('#i-apresentando').onclick = () => { telaOculta = false; palco(); };
 
 $('#b-chat').onclick = () => {
   const aberto = $('#corpo').classList.toggle('com-chat');
