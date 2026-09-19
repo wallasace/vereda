@@ -1,0 +1,21 @@
+name = "vereda"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# O limite de pessoas por sala. Dez é o teto testado da malha P2P; acima disso
+# o upload de quem apresenta a tela vira o gargalo.
+[vars]
+ROOM_CAP = "10"
+
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+# new_sqlite_classes, e não new_classes: o plano gratuito de Durable Objects só
+# atende objetos com armazenamento SQLite.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[observability]
+enabled = true
