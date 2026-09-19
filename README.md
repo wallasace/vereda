@@ -126,7 +126,7 @@ O endereço sai no final. Ele já está fixado em `SIGNAL_DEFAULT`, no topo do
 `<script>` do `index.html`, e por isso o campo **Servidor** nem aparece na tela
 inicial:
 
-    https://vereda.vereda-sinalizacao.workers.dev
+    https://vereda.wallasace.workers.dev
 
 Ao trocar esse valor, qualquer endereço que um navegador tenha guardado de uma
 publicação anterior é descartado — senão um endereço de teste sobreviveria à

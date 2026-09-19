@@ -13,7 +13,7 @@ wrangler deploy
 
 Publicado em:
 
-    https://vereda.vereda-sinalizacao.workers.dev
+    https://vereda.wallasace.workers.dev
 
 Esse endereço já está em `SIGNAL_DEFAULT`, no `index.html`. O subdomínio
 `workers.dev` é um por conta, não por projeto: todos os Workers desta conta
