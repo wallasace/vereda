@@ -3,3 +3,6 @@ node_modules/
 worker/.wrangler/
 worker/node_modules/
 *.log
+dev/dev-cert.pem
+dev/dev-key.pem
+dev/dev-openssl.cnf

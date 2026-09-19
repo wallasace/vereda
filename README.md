@@ -70,6 +70,35 @@ python3 dev/sinal.py
 Abra `http://localhost:8788`, preencha **Servidor** com `http://localhost:8788`
 e entre. Para testar com duas pessoas, abra a mesma URL em outra janela.
 
+### Testar no celular, na mesma rede
+
+Microfone e tela só são liberados em `localhost` ou sob HTTPS. Para alcançar
+outro aparelho é preciso o segundo:
+
+```bash
+python3 dev/sinal.py --tls
+```
+
+Ele gera um certificado próprio para o IP desta máquina e escuta em toda a
+rede local. O endereço sai no terminal. No celular, abra-o, **aceite o aviso de
+certificado** — foi este computador que o assinou, o navegador tem razão em
+desconfiar — e use o mesmo endereço no campo **Servidor**.
+
+Vale só para a mesma rede Wi-Fi. Como os dois aparelhos estão atrás do mesmo
+NAT, a conexão fecha direto e o TURN não faz falta.
+
+### Com TURN, para testar entre redes diferentes
+
+Celular no 4G e computador no Wi-Fi de casa quase nunca se acham sozinhos. Com
+as chaves da Cloudflare no ambiente, o servidor de desenvolvimento serve as
+mesmas credenciais que o Worker serviria:
+
+```bash
+TURN_KEY_ID=... TURN_KEY_API_TOKEN=... python3 dev/sinal.py --tls
+```
+
+A linha `TURN:` no início do terminal diz se pegou.
+
 ## Publicar
 
 ### 1. Sinalização (Cloudflare Workers)

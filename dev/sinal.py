@@ -5,13 +5,24 @@ Fala o mesmo protocolo do Worker (worker/src/index.js) para dar para testar a
 malha sem publicar nada e sem Node instalado. Serve também os arquivos do app,
 então um comando só levanta tudo:
 
-    python3 dev/sinal.py          # http://localhost:8788
+    python3 dev/sinal.py              # http://localhost:8788
+    python3 dev/sinal.py --tls        # https na rede local, para testar no celular
 
-Não use isto em produção: não tem TURN, não tem limite de sala e fala WebSocket
-no mínimo necessário para funcionar num navegador moderno.
+Com --tls ele gera um certificado próprio e escuta em todas as interfaces. O
+navegador vai reclamar que o certificado é desconhecido — é mesmo, foi esta
+máquina que o assinou. Aceitando o aviso, a página passa a valer como segura e
+o microfone e a tela liberam.
+
+Se TURN_KEY_ID e TURN_KEY_API_TOKEN estiverem no ambiente, /ice devolve as
+credenciais reais da Cloudflare, do mesmo jeito que o Worker faz:
+
+    TURN_KEY_ID=... TURN_KEY_API_TOKEN=... python3 dev/sinal.py --tls
+
+Não use isto em produção: sem limite de abuso, sem autenticação, e fala
+WebSocket no mínimo necessário para funcionar num navegador moderno.
 """
 
-import base64, hashlib, json, os, struct, sys, threading, uuid
+import base64, hashlib, json, os, socket, ssl, struct, subprocess, sys, threading, uuid, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -56,6 +67,63 @@ def difunde(sala, obj, menos=None):
         c.manda(obj)
 
 
+SEM_TURN = {"iceServers": [{"urls": ["stun:stun.cloudflare.com:3478"]}], "turn": False}
+
+
+def ice():
+    """As mesmas credenciais que o Worker serve, para o teste entre redes
+    diferentes valer alguma coisa: sem TURN, celular no 4G e computador no
+    Wi-Fi de casa quase nunca se acham."""
+    kid, token = os.environ.get("TURN_KEY_ID"), os.environ.get("TURN_KEY_API_TOKEN")
+    if not kid or not token:
+        return SEM_TURN
+    try:
+        req = urllib.request.Request(
+            f"https://rtc.live.cloudflare.com/v1/turn/keys/{kid}/credentials/generate-ice-servers",
+            data=json.dumps({"ttl": 21600}).encode(),
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return {"iceServers": json.loads(r.read())["iceServers"], "turn": True}
+    except Exception as e:
+        print(f"  ! TURN indisponível ({e}) — seguindo só com STUN", flush=True)
+        return SEM_TURN
+
+
+def certificado(pasta):
+    """Um certificado assinado por esta máquina, válido para o IP de LAN. Não
+    vale nada para o mundo; vale para o navegador liberar microfone e tela."""
+    cert, chave = os.path.join(pasta, "dev-cert.pem"), os.path.join(pasta, "dev-key.pem")
+    if os.path.isfile(cert) and os.path.isfile(chave):
+        return cert, chave
+    nomes = f"IP:{ip_local()},IP:127.0.0.1,DNS:localhost"
+    base = ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "365",
+            "-keyout", chave, "-out", cert, "-subj", "/CN=vereda-dev"]
+    try:
+        subprocess.run(base + ["-addext", f"subjectAltName={nomes}"],
+                       check=True, capture_output=True)
+    except subprocess.CalledProcessError:
+        # openssl antigo não conhece -addext; o mesmo pedido cabe num arquivo.
+        conf = os.path.join(pasta, "dev-openssl.cnf")
+        with open(conf, "w") as f:
+            f.write("[req]\ndistinguished_name=dn\nx509_extensions=v3\nprompt=no\n"
+                    "[dn]\nCN=vereda-dev\n[v3]\nsubjectAltName=" + nomes + "\n")
+        subprocess.run(base + ["-config", conf], check=True, capture_output=True)
+    print(f"  certificado gerado em {cert}", flush=True)
+    return cert, chave
+
+
+def ip_local():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
 class Alça(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -66,7 +134,7 @@ class Alça(BaseHTTPRequestHandler):
         caminho = self.path.split("?")[0]
 
         if caminho == "/ice":
-            return self.json({"iceServers": [{"urls": ["stun:stun.cloudflare.com:3478"]}], "turn": False})
+            return self.json(ice())
 
         if caminho.startswith("/room/"):
             return self.websocket(caminho[len("/room/"):])
@@ -204,6 +272,29 @@ class Alça(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    porta = int(sys.argv[1]) if len(sys.argv) > 1 else 8788
-    print(f"Vereda (dev) em http://localhost:{porta}  —  Ctrl+C para parar", flush=True)
-    ThreadingHTTPServer(("127.0.0.1", porta), Alça).serve_forever()
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    tls = "--tls" in sys.argv
+    porta = int(args[0]) if args else 8788
+
+    # Sem TLS fica preso a esta máquina de propósito; com TLS o ponto é
+    # justamente abrir para os outros aparelhos da rede.
+    host = "0.0.0.0" if tls else "127.0.0.1"
+    servidor = ThreadingHTTPServer((host, porta), Alça)
+
+    if tls:
+        pasta = os.path.dirname(os.path.abspath(__file__))
+        cert, chave = certificado(pasta)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(cert, chave)
+        servidor.socket = ctx.wrap_socket(servidor.socket, server_side=True)
+        endereco = f"https://{ip_local()}:{porta}"
+    else:
+        endereco = f"http://localhost:{porta}"
+
+    print(f"Vereda (dev) em {endereco}", flush=True)
+    print(f"  TURN: {'configurado' if ice()['turn'] else 'ausente (só STUN)'}", flush=True)
+    if tls:
+        print("  Abra esse endereço no celular e aceite o aviso de certificado.", flush=True)
+        print(f"  No campo Servidor do app, use o mesmo {endereco}", flush=True)
+    print("  Ctrl+C para parar", flush=True)
+    servidor.serve_forever()
