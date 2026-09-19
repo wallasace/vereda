@@ -122,8 +122,15 @@ wrangler login
 wrangler deploy
 ```
 
-Guarde o endereço que sai no final e coloque-o em `SIGNAL_DEFAULT`, no topo do
-`<script>` do `index.html` — assim ninguém precisa digitá-lo.
+O endereço sai no final. Ele já está fixado em `SIGNAL_DEFAULT`, no topo do
+`<script>` do `index.html`, e por isso o campo **Servidor** nem aparece na tela
+inicial:
+
+    https://vereda.vereda-sinalizacao.workers.dev
+
+Ao trocar esse valor, qualquer endereço que um navegador tenha guardado de uma
+publicação anterior é descartado — senão um endereço de teste sobreviveria à
+publicação e apontaria para uma máquina que ninguém alcança.
 
 ### 2. TURN — o passo que faz funcionar no interior
 

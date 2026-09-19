@@ -273,8 +273,8 @@ details.avancado > div { margin-top: 12px; }
 (() => {
 'use strict';
 
-// Preencha depois de publicar o Worker e o campo "Servidor" some da tela inicial.
-const SIGNAL_DEFAULT = '';
+// Com isto preenchido, o campo "Servidor" some da tela inicial.
+const SIGNAL_DEFAULT = 'https://vereda.vereda-sinalizacao.workers.dev';
 
 // Teto de upload de quem apresenta a tela, dividido entre os participantes.
 // Em malha, o apresentador sobe uma cópia do vídeo para cada pessoa; 5 Mbps é
@@ -869,6 +869,8 @@ async function entrar() {
 
   localStorage.setItem('vereda:nome', eu.nome);
   localStorage.setItem('vereda:servidor', servidor);
+  // Junto do endereço fica qual era o padrão na hora em que ele foi salvo.
+  localStorage.setItem('vereda:servidor-padrao', SIGNAL_DEFAULT);
   history.replaceState(null, '', '#' + sala);
 
   esquecerNivel('__entrada');
@@ -914,9 +916,16 @@ addEventListener('beforeunload', () => { saindo = true; try { ws?.close(); } cat
 // ---------------------------------------------------------------- início
 
 $('#f-nome').value = localStorage.getItem('vereda:nome') || '';
-$('#f-servidor').value = localStorage.getItem('vereda:servidor') || SIGNAL_DEFAULT;
+// Um endereço guardado só continua valendo enquanto o padrão for o mesmo de
+// quando ele foi salvo. Sem isso, um valor de teste deixado no navegador
+// sobreviveria à publicação e apontaria para uma máquina que ninguém alcança.
+const guardado = localStorage.getItem('vereda:servidor');
+const padraoDeEntao = localStorage.getItem('vereda:servidor-padrao');
+const servidorInicial = (guardado && padraoDeEntao === SIGNAL_DEFAULT) ? guardado : SIGNAL_DEFAULT;
+
+$('#f-servidor').value = servidorInicial;
 $('#f-sala').value = limpaSala(decodeURIComponent(location.hash.slice(1)));
-if (SIGNAL_DEFAULT && !localStorage.getItem('vereda:servidor')) {
+if (SIGNAL_DEFAULT && servidorInicial === SIGNAL_DEFAULT) {
   document.querySelector('details.avancado').style.display = 'none';
 }
 ($('#f-nome').value ? $('#f-sala') : $('#f-nome')).focus();

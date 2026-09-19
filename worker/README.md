@@ -11,9 +11,13 @@ wrangler login
 wrangler deploy
 ```
 
-O endereço sai no final (`https://vereda.SEU-SUBDOMINIO.workers.dev`). Cole-o
-no campo **Servidor** da tela inicial do app, ou fixe-o em `index.html` na
-constante `SIGNAL_DEFAULT`.
+Publicado em:
+
+    https://vereda.vereda-sinalizacao.workers.dev
+
+Esse endereço já está em `SIGNAL_DEFAULT`, no `index.html`. O subdomínio
+`workers.dev` é um por conta, não por projeto: todos os Workers desta conta
+moram embaixo dele.
 
 ## TURN (necessário para locais remotos)
 
