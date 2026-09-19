@@ -297,6 +297,7 @@ let micStream = null, micTrack = null, telaStream = null;
 let ice = { iceServers: [{ urls: ['stun:stun.cloudflare.com:3478'] }], turn: false };
 let audioCtx = null;
 let ws = null, tentativas = 0, saindo = false;
+let batida = null, ultimoPong = 0;
 
 // ---------------------------------------------------------------- nível de voz
 // Um laço só para todos os medidores: cada AnalyserNode extra custa quase nada,
@@ -481,11 +482,28 @@ function conectar() {
   const base = servidor.replace(/\/+$/, '').replace(/^http/, 'ws');
   ws = new WebSocket(`${base}/room/${sala}?name=${encodeURIComponent(eu.nome)}`);
 
-  ws.onopen = () => { tentativas = 0; pilulaRede('na sala', ''); };
-  ws.onmessage = (ev) => { try { trata(JSON.parse(ev.data)); } catch (e) { console.warn(e); } };
+  ws.onopen = () => {
+    tentativas = 0;
+    ultimoPong = Date.now();
+    pilulaRede('na sala', '');
+    clearInterval(batida);
+    batida = setInterval(() => {
+      // Sem resposta por um minuto, a conexão morreu sem avisar. Fechar à
+      // força é o que faz o onclose disparar e a reconexão começar — parada
+      // achando que está tudo bem é o pior estado possível.
+      if (Date.now() - ultimoPong > 60000) { try { ws.close(); } catch {} return; }
+      if (ws.readyState === 1) ws.send('ping');
+    }, 25000);
+  };
+
+  ws.onmessage = (ev) => {
+    if (ev.data === 'pong') { ultimoPong = Date.now(); return; }
+    try { trata(JSON.parse(ev.data)); } catch (e) { console.warn(e); }
+  };
   ws.onerror = () => {};
 
   ws.onclose = () => {
+    clearInterval(batida);
     if (saindo) return;
     // A sessão inteira é refeita na volta: o servidor dá um id novo a cada
     // conexão, e os pares antigos apontam para um id que não existe mais.

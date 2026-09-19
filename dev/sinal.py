@@ -239,8 +239,12 @@ class Alça(BaseHTTPRequestHandler):
             return {}
         if op != 0x1:
             return {}
+        texto = dados.decode(errors="replace")
+        if texto == "ping":          # o mesmo que o setWebSocketAutoResponse do Worker faz
+            self.connection.sendall(bytes([0x81, 4]) + b"pong")
+            return {}
         try:
-            return json.loads(dados.decode())
+            return json.loads(texto)
         except ValueError:
             return {}
 

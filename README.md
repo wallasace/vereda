@@ -52,6 +52,16 @@ A camada de mídia fica isolada no bloco `malha`, atrás de
 `abrir/fechar/iniciarTela/pararTela`. Quando a malha ficar apertada, um SFU
 entra ali sem tocar no resto do app.
 
+### A conexão que morre calada
+
+Depois que todo mundo conectou, a sinalização fica em silêncio — e operadora de
+celular derruba TCP ocioso sem avisar ninguém. O `onclose` não dispara, e a
+pessoa continua na sala sem receber mais nada.
+
+O cliente manda `ping` a cada 25 s e reconecta se não vier `pong` em um minuto.
+No Worker isso é `setWebSocketAutoResponse`, que responde **sem acordar o
+Durable Object**: mantém a conexão viva e não conta como requisição cobrada.
+
 ### Negociação
 
 Os dois lados podem fazer uma oferta ao mesmo tempo. Em vez de combinar de quem

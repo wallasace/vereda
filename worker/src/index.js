@@ -74,6 +74,13 @@ export class Room {
     this.state = state;
     this.env = env;
     this.cap = Number(env.ROOM_CAP || 10);
+
+    // Numa conversa em andamento a sinalização fica calada por minutos, e
+    // operadora de celular derruba TCP ocioso sem avisar: o navegador segue
+    // achando que está na sala e não recebe mais nada. O cliente manda "ping",
+    // e esta resposta automática sai sem acordar o Durable Object — mantém a
+    // conexão viva e não conta como requisição cobrada.
+    state.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
   }
 
   async fetch(request) {
