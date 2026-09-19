@@ -863,6 +863,12 @@ async function entrar() {
   if (!ice.turn) {
     sistema('Sem TURN configurado: a chamada só fecha entre redes que aceitam conexão direta.');
   }
+  // Nenhum navegador de celular expõe getDisplayMedia. Melhor o botão dizer
+  // isso de saída do que falhar depois do toque.
+  if (!navigator.mediaDevices?.getDisplayMedia) {
+    $('#b-tela').disabled = true;
+    $('#b-tela-txt').textContent = 'Tela (só no computador)';
+  }
   if (!micTrack) {
     // Sem microfone não há o que silenciar, e os outros precisam ver isso na
     // ficha em vez de esperar por uma voz que não vem.
