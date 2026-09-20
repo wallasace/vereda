@@ -139,6 +139,17 @@ details.avancado > div { margin-top: 12px; }
 .selo svg { width: 15px; height: 15px; }
 .selo .mudo { color: var(--red); }
 .selo .partilha { color: var(--green); }
+.volume-local {
+  position: absolute; bottom: 8px; right: 8px; width: 22px; height: 22px;
+  border-radius: 50%; border: 1px solid var(--line); background: var(--panel-2);
+  color: var(--ink-dim); display: grid; place-items: center; cursor: pointer;
+}
+.volume-local:hover { border-color: var(--ink-faint); }
+.volume-local.baixo { color: var(--amber); border-color: var(--amber); }
+.volume-local.mudo-local { color: var(--red); border-color: var(--red); }
+.volume-local svg { width: 13px; height: 13px; }
+.corpo.apresentando .volume-local { width: 18px; height: 18px; bottom: 4px; right: 4px; }
+.corpo.apresentando .volume-local svg { width: 10px; height: 10px; }
 .ficha .estado { position: absolute; top: 8px; left: 8px; width: 7px; height: 7px; border-radius: 50%; }
 .estado.conectando { background: var(--amber); }
 .estado.pronto { background: var(--green); }
@@ -195,13 +206,13 @@ details.avancado > div { margin-top: 12px; }
 }
 .config-dica { font-size: 12px; color: var(--ink-faint); margin: -10px 0 16px; }
 
-/* seletor de qualidade sobre o vídeo, ao lado de "Ocultar tela" */
-#b-qualidade-vista {
-  position: absolute; top: 10px; right: 128px; width: auto; padding: 6px 10px;
-  border-radius: 8px; border: 0; background: rgba(8,14,24,.72); color: #e8eef7;
-  font-size: 12.5px; backdrop-filter: blur(6px);
+/* controles de quem assiste, sobre o vídeo, ao lado de "Ocultar tela" */
+.controles-vista { position: absolute; top: 10px; right: 128px; display: flex; gap: 6px; }
+.controles-vista[hidden] { display: none; }
+.controles-vista select {
+  width: auto; padding: 6px 10px; border-radius: 8px; border: 0;
+  background: rgba(8,14,24,.72); color: #e8eef7; font-size: 12.5px; backdrop-filter: blur(6px);
 }
-#b-qualidade-vista[hidden] { display: none; }
 .aviso-topo button { background: transparent; border: 0; text-decoration: underline; font-weight: 650; }
 @media (max-width: 620px) {
   .corpo.com-chat { grid-template-columns: 0 minmax(0, 1fr); }
@@ -268,11 +279,18 @@ details.avancado > div { margin-top: 12px; }
       </div>
       <div id="tela-wrap"><video id="tela" autoplay playsinline muted></video>
         <div class="legenda" id="tela-legenda"></div>
-        <select id="b-qualidade-vista" hidden title="Qualidade que você quer receber desta tela">
-          <option value="1">Nítido</option>
-          <option value="2" selected>Equilibrado</option>
-          <option value="4">Leve</option>
-        </select>
+        <div class="controles-vista" id="controles-vista" hidden>
+          <select id="b-qualidade-vista" title="Nitidez que você quer receber desta tela">
+            <option value="1">Nítido</option>
+            <option value="2" selected>Equilibrado</option>
+            <option value="4">Leve</option>
+          </select>
+          <select id="b-fps-vista" title="Fluidez que você quer receber desta tela">
+            <option value="20">Fluido</option>
+            <option value="12" selected>Padrão</option>
+            <option value="5">Leve</option>
+          </select>
+        </div>
         <button class="ocultar" id="b-ocultar">Ocultar tela</button>
       </div>
       <div class="grade" id="grade"></div>
@@ -338,11 +356,19 @@ details.avancado > div { margin-top: 12px; }
       <select id="c-saida"></select>
     </div>
     <div class="campo">
-      <label for="c-qualidade">Qualidade ao transmitir sua tela</label>
+      <label for="c-qualidade">Nitidez ao transmitir sua tela</label>
       <select id="c-qualidade">
         <option value="854">Leve — melhor para link e computador fracos</option>
         <option value="1280" selected>Padrão</option>
         <option value="1920">Nítida — pesa mais na sua máquina</option>
+      </select>
+    </div>
+    <div class="campo">
+      <label for="c-fps">Fluidez ao transmitir sua tela</label>
+      <select id="c-fps">
+        <option value="5">Leve — melhor para link e computador fracos</option>
+        <option value="12" selected>Padrão</option>
+        <option value="20">Fluida — pesa mais na sua máquina</option>
       </select>
       <div class="config-dica">Vale para a próxima vez que você apresentar, e já se aplica se estiver apresentando agora.</div>
     </div>
@@ -380,6 +406,7 @@ let ws = null, tentativas = 0, saindo = false;
 let batida = null, ultimoPong = 0;
 let saidaEscolhida = localStorage.getItem('vereda:saida') || '';
 let qualidadeTransmissao = Number(localStorage.getItem('vereda:qualidade')) || 1280;
+let fpsTransmissao = Number(localStorage.getItem('vereda:fps')) || 12;
 let vigiaCpu = null;
 
 // ---------------------------------------------------------------- nível de voz
@@ -423,6 +450,7 @@ const esquecerNivel = (id) => niveis.delete(id);
 const malha = (() => {
   const cons = new Map(); // id -> { pc, educado, fazendoOferta, ignorando, telaIds }
   let aoAudio = () => {}, aoTela = () => {}, aoRede = () => {};
+  let fpsAlvo = 12; // o que quem apresenta escolheu; cada espectador só pode pedir menos que isto.
 
   const enviar = (para, dados) => manda({ t: 'signal', to: para, data: dados });
 
@@ -433,7 +461,7 @@ const malha = (() => {
     // Papéis fixos e opostos nos dois lados, decididos pelo id: quando os dois
     // fazem oferta ao mesmo tempo, o "educado" cede e a colisão se resolve
     // sozinha, sem ninguém precisar esperar a vez.
-    const c = { pc, educado: eu.id < id, fazendoOferta: false, ignorando: false, telaIds: new Set(), escalaPedida: 1 };
+    const c = { pc, educado: eu.id < id, fazendoOferta: false, ignorando: false, telaIds: new Set(), escalaPedida: 1, fpsPedido: null };
     cons.set(id, c);
 
     // Sem faixa nenhuma o onnegotiationneeded nunca dispara e quem entrou só
@@ -491,6 +519,12 @@ const malha = (() => {
         return;
       }
 
+      if (dados.fpsPedido) {
+        c.fpsPedido = Number(dados.fpsPedido) || null;
+        ajustarBanda();
+        return;
+      }
+
       // Chega antes dos tracks, pelo mesmo WebSocket e portanto em ordem: é como
       // o outro lado distingue o áudio da tela do áudio do microfone.
       if (dados.telaId) { c.telaIds.add(dados.telaId); return; }
@@ -523,11 +557,13 @@ const malha = (() => {
         const p = s.getParameters();
         if (!p.encodings?.length) p.encodings = [{}];
         p.encodings[0].maxBitrate = teto;
-        p.encodings[0].maxFramerate = 12;
-        // Cada par pode pedir uma escala diferente da mesma transmissão —
-        // é por isso que a malha (uma conexão por pessoa) permite algo que um
-        // SFU sem simulcast não permitiria de graça.
+        // Cada par pode pedir uma nitidez e uma fluidez diferentes da mesma
+        // transmissão — é por isso que a malha (uma conexão por pessoa)
+        // permite algo que um SFU sem simulcast não permitiria de graça. O
+        // pedido de quem assiste só reduz, nunca passa do que foi escolhido
+        // por quem apresenta.
         p.encodings[0].scaleResolutionDownBy = c.escalaPedida || 1;
+        p.encodings[0].maxFramerate = Math.min(fpsAlvo, c.fpsPedido || fpsAlvo);
         // Sob aperto, prefira segurar os 12fps e perder nitidez a segurar a
         // nitidez e ir atrasando: um quadro borrado incomoda menos que um
         // vídeo que trava e recupera aos solavancos. É também o que evita que
@@ -539,14 +575,15 @@ const malha = (() => {
     return teto;
   }
 
-  async function iniciarTela(larguraDesejada) {
+  async function iniciarTela(larguraDesejada, fpsDesejado) {
+    fpsAlvo = fpsDesejado || 12;
     // 1080p mede quase o dobro dos pixels de 720p, e codificar cada quadro
     // extra rouba CPU/GPU de quem apresenta — de um jogo rodando ao mesmo
     // tempo, por exemplo — e é o que faz os quadros começarem a acumular no
     // codificador em vez de sair na hora. Para texto e slides, a diferença de
     // legibilidade é pequena; a diferença de fôlego da máquina não é.
     const s = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: { ideal: 12, max: 15 }, width: { max: larguraDesejada || 1280 } },
+      video: { frameRate: { ideal: fpsAlvo, max: fpsAlvo + 3 }, width: { max: larguraDesejada || 1280 } },
       audio: true,
     });
     telaStream = s;
@@ -578,6 +615,13 @@ const malha = (() => {
     }
   }
 
+  // O fps não precisa reconfigurar a captura como a resolução precisa: é só
+  // um teto na codificação, então muda na hora em todas as conexões.
+  function ajustarFps(novoFps) {
+    fpsAlvo = novoFps || 12;
+    ajustarBanda();
+  }
+
   function pararTela() {
     if (!telaStream) return;
     const ids = new Set(telaStream.getTracks().map((t) => t.id));
@@ -605,6 +649,11 @@ const malha = (() => {
     if (c) enviar(id, { qualidadePedida: fator });
   }
 
+  function pedirFps(id, fps) {
+    const c = cons.get(id);
+    if (c) enviar(id, { fpsPedido: fps });
+  }
+
   // Só quem está apresentando tem algo a reportar aqui. 'none' cobre tanto
   // "sem restrição" quanto "não estou apresentando".
   async function limitacaoPropria() {
@@ -623,7 +672,7 @@ const malha = (() => {
 
   return {
     abrir, fechar, fecharTudo, receber, iniciarTela, pararTela, ajustarBanda,
-    ajustarLarguraCaptura, trocarMic, pedirQualidade, limitacaoPropria,
+    ajustarLarguraCaptura, ajustarFps, trocarMic, pedirQualidade, pedirFps, limitacaoPropria,
     ligar(h) { aoAudio = h.aoAudio; aoTela = h.aoTela; aoRede = h.aoRede; },
     get tamanho() { return cons.size; },
   };
@@ -750,6 +799,21 @@ function poePar(p) {
   nm.textContent = par.sou ? `${par.nome} (você)` : par.nome;
   const selo = cria('div', 'selo');
   f.append(estado, av, nm, selo);
+
+  if (!par.sou) {
+    par.volumeIndice = 0; // 1 = nítido
+    const botaoVolume = cria('button', 'volume-local');
+    botaoVolume.type = 'button';
+    botaoVolume.title = 'Volume só para você — não afeta o que os outros ouvem';
+    botaoVolume.onclick = () => {
+      par.volumeIndice = (par.volumeIndice + 1) % NIVEIS_VOLUME.length;
+      aplicarVolumeLocal(par);
+    };
+    f.append(botaoVolume);
+    par.botaoVolume = botaoVolume;
+    aplicarVolumeLocal(par);
+  }
+
   $('#grade').append(f);
 
   par.ficha = f;
@@ -775,11 +839,34 @@ function tiraPar(id) {
 const ICONE_MUDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" class="mudo"><path d="M3 3l18 18"/><path d="M9 9v3a3 3 0 004.6 2.5"/><path d="M15 11V5a3 3 0 00-5.9-.7"/><path d="M5 11a7 7 0 0010.3 6.2M12 19v3"/></svg>';
 const ICONE_TELA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" class="partilha"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/></svg>';
 
+// Três estados, um clique de cada vez: nítido -> baixo -> mudo -> nítido. Só
+// para quem assiste, e só de um lado — não avisa a outra pessoa, porque é
+// volume local, não mudo de verdade.
+const NIVEIS_VOLUME = [1, 0.35, 0];
+const ICONES_VOLUME = [
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 9v6h4l5 5V4L8 9H4z"/><path d="M17 8a5 5 0 010 8"/><path d="M20 5a9 9 0 010 14"/></svg>',
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 9v6h4l5 5V4L8 9H4z"/><path d="M17 8a5 5 0 010 8"/></svg>',
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 9v6h4l5 5V4L8 9H4z"/><path d="M17 9l5 6M22 9l-5 6"/></svg>',
+];
+const CLASSES_VOLUME = ['', 'baixo', 'mudo-local'];
+
 function pinta(p) {
   if (!p) return;
   const selo = p.ficha.querySelector('.selo');
   selo.innerHTML = (p.mudo ? ICONE_MUDO : '') + (p.apresentando ? ICONE_TELA : '');
   if (p.mudo) p.ficha.classList.remove('falando');
+}
+
+// O volume local mexe só no <audio> deste navegador — não passa pela rede,
+// então não muda nada do que os outros participantes ouvem.
+function aplicarVolumeLocal(par) {
+  const vol = NIVEIS_VOLUME[par.volumeIndice];
+  if (par.audio) par.audio.volume = vol;
+  if (par.telaAudio) par.telaAudio.volume = vol;
+  if (par.botaoVolume) {
+    par.botaoVolume.innerHTML = ICONES_VOLUME[par.volumeIndice];
+    par.botaoVolume.className = 'volume-local ' + CLASSES_VOLUME[par.volumeIndice];
+  }
 }
 
 function rede(id, estado) {
@@ -810,7 +897,7 @@ function palco() {
     telaOculta = false;
   }
 
-  const seletorQualidade = $('#b-qualidade-vista');
+  const controlesVista = $('#controles-vista');
 
   if (!fluxo || telaOculta) {
     wrap.classList.remove('ativa');
@@ -818,7 +905,7 @@ function palco() {
     $('#tela').srcObject = null;
     aviso.hidden = !fluxo;
     if (fluxo) aviso.textContent = (quem.sou ? 'sua tela' : quem.nome) + ' · mostrar';
-    seletorQualidade.hidden = true;
+    controlesVista.hidden = true;
     return;
   }
   aviso.hidden = true;
@@ -827,10 +914,10 @@ function palco() {
   wrap.classList.add('ativa');
   corpo.classList.add('apresentando');
 
-  // Pedir qualidade só faz sentido para a tela de outra pessoa: a própria
-  // não passa pela rede, não tem o que ajustar.
-  seletorQualidade.hidden = quem.sou;
-  if (!quem.sou) seletorQualidade.dataset.paraId = quem.id;
+  // Pedir nitidez ou fluidez só faz sentido para a tela de outra pessoa: a
+  // própria não passa pela rede, não tem o que ajustar.
+  controlesVista.hidden = quem.sou;
+  if (!quem.sou) controlesVista.dataset.paraId = quem.id;
 }
 
 function toca(stream) {
@@ -884,6 +971,7 @@ async function preencherConfig() {
   }
 
   $('#c-qualidade').value = String(qualidadeTransmissao);
+  $('#c-fps').value = String(fpsTransmissao);
 }
 
 function abrirConfig() {
@@ -953,8 +1041,17 @@ $('#c-qualidade').onchange = async (e) => {
   if (eu.apresentando) {
     const aplicou = await malha.ajustarLarguraCaptura(qualidadeTransmissao);
     avisa(aplicou
-      ? 'Qualidade da transmissão atualizada.'
-      : 'Seu navegador não deixa mudar a qualidade com a tela já aberta — vale a partir da próxima vez que você apresentar.');
+      ? 'Nitidez da transmissão atualizada.'
+      : 'Seu navegador não deixa mudar a nitidez com a tela já aberta — vale a partir da próxima vez que você apresentar.');
+  }
+};
+
+$('#c-fps').onchange = (e) => {
+  fpsTransmissao = Number(e.target.value);
+  localStorage.setItem('vereda:fps', String(fpsTransmissao));
+  if (eu.apresentando) {
+    malha.ajustarFps(fpsTransmissao);
+    avisa('Fluidez da transmissão atualizada.');
   }
 };
 
@@ -1016,9 +1113,10 @@ malha.ligar({
   aoAudio(id, fluxo, ehDaTela) {
     const p = pares.get(id);
     if (!p) return;
-    if (ehDaTela) { p.telaAudio?.remove(); p.telaAudio = toca(fluxo); return; }
+    if (ehDaTela) { p.telaAudio?.remove(); p.telaAudio = toca(fluxo); aplicarVolumeLocal(p); return; }
     p.audio?.remove();
     p.audio = toca(fluxo);
+    aplicarVolumeLocal(p);
     escutarNivel(id, fluxo, (falando) => p.ficha.classList.toggle('falando', falando && !p.mudo));
   },
   aoTela(id, fluxo) {
@@ -1059,7 +1157,7 @@ async function apresentar() {
   if (outro) return avisa(`${outro.nome} já está apresentando. Uma tela por vez.`);
 
   try {
-    const teto = await malha.iniciarTela(qualidadeTransmissao);
+    const teto = await malha.iniciarTela(qualidadeTransmissao, fpsTransmissao);
     eu.apresentando = true;
     const p = pares.get(eu.id);
     if (p) { p.apresentando = true; pinta(p); }
@@ -1095,8 +1193,12 @@ function pararApresentar() {
 $('#b-ocultar').onclick = () => { telaOculta = true; palco(); };
 $('#i-apresentando').onclick = () => { telaOculta = false; palco(); };
 $('#b-qualidade-vista').onchange = (e) => {
-  const id = e.target.dataset.paraId;
+  const id = $('#controles-vista').dataset.paraId;
   if (id) malha.pedirQualidade(id, Number(e.target.value));
+};
+$('#b-fps-vista').onchange = (e) => {
+  const id = $('#controles-vista').dataset.paraId;
+  if (id) malha.pedirFps(id, Number(e.target.value));
 };
 
 $('#b-chat').onclick = () => {
@@ -1248,6 +1350,7 @@ prepararMic();
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
 }
+
 
 })();
 </script>

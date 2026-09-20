@@ -27,11 +27,15 @@ um botão na barra durante a chamada. Troca de microfone usa `replaceTrack`
 por conexão (ou `addTrack` para quem entrou sem microfone). Saída de som via
 `setSinkId`, escondida quando o navegador não suporta (Safari e Firefox).
 
-## Volume e mudo por pessoa
+## ~~Volume e mudo por pessoa~~ — feito em 2026-09-20
 
-Abaixar o volume de alguém especificamente ou mutá-lo do seu lado (mudo
-local, sem afetar os outros participantes) — diferente do mudo que a própria
-pessoa aplica em si. Ainda não feito.
+Um botão em cada ficha (só nas dos outros, nunca na própria) cicla três
+níveis: nítido, baixo, mudo. Mexe direto no `.volume` do elemento `<audio>`
+daquela pessoa — voz e áudio da tela dela, se estiver apresentando — então é
+puramente local: não manda nada pela rede, não afeta o que ninguém mais
+ouve. Verificado com um oscilador de áudio sintético indo pela tela
+compartilhada: o `.volume` do elemento real mudou 1 → 0,35 → 0 a cada
+clique. Ainda não feito.
 
 ## ~~Escolha de resolução~~ — feito em 2026-09-20
 
@@ -44,10 +48,20 @@ já existente; o remetente aplica `scaleResolutionDownBy` só na conexão
 daquele espectador. Verificado ponta a ponta: pedir "Leve" (fator 4) numa
 fonte de 1920×1080 chegou como 480×270 do outro lado.
 
-**Taxa de quadros continua sem escolha** — fixa em 12fps tanto para
-transmitir quanto para assistir. Não foi pedido desta vez; seria simétrico
-implementar (`frameRate` na captura, e um `maxFramerate` por conexão como já
-existe para a escala).
+## ~~Escolha de taxa de quadros~~ — feito em 2026-09-20
+
+Simétrico à escolha de resolução, no mesmo painel e no mesmo seletor sobre o
+vídeo de quem assiste. Quem transmite escolhe entre 5/12/20fps; quem assiste
+pode pedir menos (nunca mais) do que isso para aquela transmissão
+especificamente. Verificado com números reais de `getStats()`: o padrão
+mostrou 12fps de saída mesmo com a fonte fornecendo 24; pedir "Leve" (5)
+mudou a entrada para exatamente 5fps; pedir mais do que o remetente escolheu
+ficou preso no teto dele, como projetado.
+
+Achado no caminho: o campo `framesPerSecond` do `getStats()` é uma média
+suavizada e pode mostrar um número enganosamente baixo logo depois de trocar
+os parâmetros de codificação — a contagem real de quadros (`framesEncoded`,
+com o tempo entre duas leituras) é a fonte confiável.
 
 ## Investigar: apresentar tela pode pesar na máquina de quem apresenta
 
