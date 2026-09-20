@@ -278,6 +278,10 @@ details.avancado > div { margin-top: 10px; }
 .chat-header-actions svg { width: 16px; }
 .chat-lista { overflow-y: auto; padding: 13px 19px; scrollbar-width: thin; scrollbar-color: #34333d transparent; display: flex; flex-direction: column; gap: 4px; }
 .msg { position: relative; display: grid; grid-template-columns: 30px 1fr; gap: 9px; margin-bottom: 15px; animation: messageIn .3s ease both; }
+.message-avatar {
+  width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+  color: #08111d; font-size: 12px; font-weight: 750; align-self: start;
+}
 @keyframes messageIn { from { opacity: 0; transform: translateY(7px); } }
 .msg .quem { font-weight: 680; font-size: 11.5px; }
 .msg .quando { color: #65646e; font-size: 9px; margin-left: 6px; }
@@ -316,6 +320,17 @@ details.avancado > div { margin-top: 10px; }
 .composer-input:focus-within { border-color: rgba(139,112,255,.65); box-shadow: 0 0 0 3px rgba(124,92,255,.08); }
 #chat-texto { flex: 1; min-width: 0; height: 100%; padding: 0 6px 0 13px; border: 0; background: transparent; color: #fff; font-size: 12px; outline: 0; }
 #chat-texto::placeholder { color: #65646e; }
+.composer-tools { display: flex; padding-right: 6px; }
+.composer-tools button { display: grid; place-items: center; width: 27px; height: 30px; border: 0; background: transparent; color: #6d6b76; }
+.composer-tools button:hover { color: #aaa7b4; }
+.emoji-picker {
+  position: absolute; z-index: 25; right: 16px; bottom: 68px; width: 260px; padding: 10px;
+  border: 1px solid var(--line); border-radius: 14px; background: #1b1a23; box-shadow: 0 20px 55px rgba(0,0,0,.42);
+}
+.emoji-picker[hidden] { display: none; }
+.emoji-picker-grade { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.emoji-picker-grade button { display: grid; place-items: center; height: 32px; border: 0; border-radius: 8px; background: transparent; font-size: 17px; }
+.emoji-picker-grade button:hover { background: rgba(255,255,255,.07); }
 .chat-forma button[type=submit] { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 13px; background: var(--blue); color: #fff; box-shadow: 0 9px 22px rgba(118,87,245,.22); transition: .2s; }
 .chat-forma button[type=submit]:hover { transform: translateY(-2px); }
 .mention-menu { position: absolute; z-index: 25; right: 16px; bottom: 68px; left: 16px; max-height: 220px; overflow: auto; padding: 7px; border: 1px solid var(--line); border-radius: 14px; background: #1b1a23; box-shadow: 0 20px 55px rgba(0,0,0,.42); }
@@ -333,6 +348,30 @@ details.avancado > div { margin-top: 10px; }
 .config-topo strong { font-size: 17px; }
 .fechar { background: var(--panel-2); border: 1px solid var(--line); color: var(--ink); width: 28px; height: 28px; border-radius: 50%; font-size: 14px; line-height: 1; }
 .config-dica { font-size: 11.5px; color: var(--ink-faint); margin: -10px 0 16px; line-height: 1.5; }
+
+/* ---------- diálogo de compartilhar tela ---------- */
+.share-options { display: grid; gap: 9px; margin-bottom: 16px; }
+.share-option {
+  display: flex; align-items: center; gap: 12px; padding: 12px; text-align: left;
+  border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.025);
+  transition: .15s;
+}
+.share-option:hover { background: rgba(255,255,255,.05); }
+.share-option.selected { border-color: var(--blue); background: rgba(124,92,255,.11); box-shadow: 0 0 0 2px rgba(124,92,255,.09); }
+.share-option-icon { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; border-radius: 10px; background: var(--panel-2); color: #a58fff; }
+.share-option strong { display: block; font-size: 12.5px; }
+.share-option small { display: block; margin-top: 2px; color: var(--ink-faint); font-size: 10.5px; }
+.audio-toggle { display: flex; align-items: center; gap: 12px; padding: 12px 13px; margin-bottom: 14px; border-radius: 13px; background: rgba(255,255,255,.035); cursor: pointer; }
+.audio-toggle span { flex: 1; }
+.audio-toggle strong { display: block; font-size: 12.5px; }
+.audio-toggle small { display: block; margin-top: 2px; color: var(--ink-faint); font-size: 10.5px; }
+.audio-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.audio-toggle i { position: relative; width: 38px; height: 22px; flex: 0 0 auto; border-radius: 20px; background: #393844; transition: .2s; }
+.audio-toggle i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: .2s; }
+.audio-toggle input:checked + i { background: var(--blue); }
+.audio-toggle input:checked + i::after { transform: translateX(16px); }
+.share-quality { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 4px; }
+.share-quality label span { display: block; margin-bottom: 6px; color: var(--ink-dim); font-size: 10.5px; font-weight: 630; }
 
 /* menu de contexto (botão direito num participante ou na tela) */
 .ctx-menu { position: fixed; z-index: 60; min-width: 220px; padding: 6px; border: 1px solid var(--line); border-radius: 14px; background: #1a1922; color: #eeeaf5; box-shadow: 0 18px 55px rgba(0,0,0,.45); }
@@ -557,9 +596,22 @@ details.avancado > div { margin-top: 10px; }
       <div class="chat-lista" id="chat-lista"></div>
       <div class="typing" id="digitando" hidden><span class="typing-dots"><i></i><i></i><i></i></span><span id="digitando-texto"></span></div>
       <form class="chat-forma" id="chat-forma">
+        <div class="mention-menu" id="mention-menu" hidden></div>
+        <div class="emoji-picker" id="emoji-picker" hidden><div class="emoji-picker-grade"></div></div>
         <div id="reply-composer-slot"></div>
         <div class="composer-input">
           <input type="text" id="chat-texto" placeholder="Mensagem, @menção..." maxlength="2000" autocomplete="off">
+          <div class="composer-tools">
+            <button type="button" id="ct-mencao" title="Marcar alguém" aria-label="Marcar alguém">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M16 12v1.5a2.5 2.5 0 005 0V12a9 9 0 10-4 7.5"/></svg>
+            </button>
+            <button type="button" id="ct-imagem" title="Anexar imagem ou GIF (link)" aria-label="Anexar imagem ou GIF">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+            </button>
+            <button type="button" id="ct-emoji" title="Emoji" aria-label="Adicionar emoji">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01M15 9h.01"/></svg>
+            </button>
+          </div>
         </div>
         <button type="submit" aria-label="Enviar mensagem">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg>
@@ -576,6 +628,55 @@ details.avancado > div { margin-top: 10px; }
   <div class="config-cartao" style="text-align:center">
     <p style="margin:0 0 16px;font-size:15px">Você foi removido desta sala pelo administrador.</p>
     <button class="botao" id="expulso-voltar" style="margin-top:0">Voltar ao início</button>
+  </div>
+</div>
+
+<!-- ---------------- compartilhar tela ---------------- -->
+<div class="veu" id="share-veu" hidden>
+  <div class="config-cartao">
+    <div class="config-topo">
+      <strong>O que você quer compartilhar?</strong>
+      <button class="fechar" id="share-fechar" aria-label="Fechar">✕</button>
+    </div>
+    <div class="share-options">
+      <button type="button" class="share-option" data-surface="monitor">
+        <span class="share-option-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg></span>
+        <span><strong>Tela inteira</strong><small>Tudo que aparece na sua tela</small></span>
+      </button>
+      <button type="button" class="share-option selected" data-surface="window">
+        <span class="share-option-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+        <span><strong>Uma janela</strong><small>Só o aplicativo escolhido</small></span>
+      </button>
+      <button type="button" class="share-option" data-surface="browser">
+        <span class="share-option-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/></svg></span>
+        <span><strong>Aba do navegador</strong><small>Uma aba, com áudio opcional</small></span>
+      </button>
+    </div>
+    <label class="audio-toggle">
+      <span><strong>Compartilhar áudio</strong><small>Inclui o som desta fonte, quando o navegador deixar</small></span>
+      <input type="checkbox" id="share-audio" checked><i></i>
+    </label>
+    <div class="share-quality">
+      <label><span>Nitidez</span>
+        <select id="share-qualidade">
+          <option value="854">Leve</option>
+          <option value="1280" selected>Padrão</option>
+          <option value="1920">Nítida</option>
+        </select>
+      </label>
+      <label><span>Fluidez</span>
+        <select id="share-fps">
+          <option value="5">Leve</option>
+          <option value="12" selected>Padrão</option>
+          <option value="20">Fluida</option>
+        </select>
+      </label>
+    </div>
+    <button class="botao" id="share-confirmar">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      Compartilhar agora
+    </button>
+    <div class="config-dica">O tipo escolhido é só uma sugestão para o seletor do navegador — ele decide, no fim, o que aparece na lista.</div>
   </div>
 </div>
 
@@ -822,16 +923,24 @@ const malha = (() => {
     return teto;
   }
 
-  async function iniciarTela(larguraDesejada, fpsDesejado) {
+  async function iniciarTela(larguraDesejada, fpsDesejado, surface, comAudio) {
     fpsAlvo = fpsDesejado || 12;
     // 1080p mede quase o dobro dos pixels de 720p, e codificar cada quadro
     // extra rouba CPU/GPU de quem apresenta — de um jogo rodando ao mesmo
     // tempo, por exemplo — e é o que faz os quadros começarem a acumular no
     // codificador em vez de sair na hora. Para texto e slides, a diferença de
     // legibilidade é pequena; a diferença de fôlego da máquina não é.
+    //
+    // displaySurface é um pedido, não uma ordem: é o navegador quem decide o
+    // que aparece no seletor, e nem todos respeitam a preferência — mas o
+    // Chrome pré-seleciona a aba certa quando ela existe.
     const s = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: { ideal: fpsAlvo, max: fpsAlvo + 3 }, width: { max: larguraDesejada || 1280 } },
-      audio: true,
+      video: {
+        frameRate: { ideal: fpsAlvo, max: fpsAlvo + 3 },
+        width: { max: larguraDesejada || 1280 },
+        displaySurface: surface || 'window',
+      },
+      audio: comAudio !== false,
     });
     telaStream = s;
     const v = s.getVideoTracks()[0];
@@ -1256,11 +1365,13 @@ function palco() {
   const aviso = $('#i-apresentando');
   const fluxo = quem ? (quem.sou ? telaStream : quem.tela) : null;
 
-  // Uma apresentação nova merece ser vista: a escolha de esconder valia para
-  // a anterior.
+  // Uma apresentação nova merece ser vista — a escolha de esconder valia para
+  // a anterior. Mas só para QUEM ASSISTE: quem está apresentando já está
+  // olhando a própria tela de verdade, e não quer ser tirado da sala normal
+  // (participantes, chat) só porque começou a compartilhar.
   if ((quem ? quem.id : null) !== ultimoApresentador) {
     ultimoApresentador = quem ? quem.id : null;
-    telaOculta = false;
+    telaOculta = !!(quem && quem.sou);
   }
 
   const controlesVista = $('#controles-vista');
@@ -1505,9 +1616,12 @@ function formataTexto(el, texto) {
   }
 }
 
+// Chamada "achaGif" por herança do nome, mas cobre imagem comum também —
+// sem servidor de upload, um link é o único jeito honesto de mandar imagem:
+// vira cartão em vez de um link cru feio no meio da conversa.
 function achaGif(texto) {
   const urls = texto.match(/https?:\/\/[^\s]+/g) || [];
-  return urls.find((u) => /\.gif(?:\?|$)|media\.giphy\.com|media\.tenor\.com/i.test(u));
+  return urls.find((u) => /\.(gif|png|jpe?g|webp|avif)(?:\?|$)|media\.giphy\.com|media\.tenor\.com/i.test(u));
 }
 
 function mensagem(nome, texto, ts, propria, id, autorId, replyTo) {
@@ -1655,14 +1769,48 @@ $('#b-mic').onclick = () => {
   botaoMic();
 };
 
-$('#b-tela').onclick = () => (eu.apresentando ? pararApresentar() : apresentar());
+$('#b-tela').onclick = () => (eu.apresentando ? pararApresentar() : abrirDialogoCompartilhar());
 
-async function apresentar() {
+let surfaceEscolhida = 'window';
+
+function abrirDialogoCompartilhar() {
   const outro = [...pares.values()].find((p) => p.apresentando && !p.sou);
   if (outro) return avisa(`${outro.nome} já está apresentando. Uma tela por vez.`);
+  $('#share-qualidade').value = String(qualidadeTransmissao);
+  $('#share-fps').value = String(fpsTransmissao);
+  $('#share-veu').hidden = false;
+}
+function fecharDialogoCompartilhar() { $('#share-veu').hidden = true; }
+
+$('#share-fechar').onclick = fecharDialogoCompartilhar;
+$('#share-veu').addEventListener('click', (e) => { if (e.target.id === 'share-veu') fecharDialogoCompartilhar(); });
+
+for (const opt of document.querySelectorAll('.share-option')) {
+  opt.onclick = () => {
+    document.querySelectorAll('.share-option').forEach((o) => o.classList.remove('selected'));
+    opt.classList.add('selected');
+    surfaceEscolhida = opt.dataset.surface;
+  };
+}
+
+$('#share-confirmar').onclick = () => {
+  fecharDialogoCompartilhar();
+  apresentar({
+    surface: surfaceEscolhida,
+    comAudio: $('#share-audio').checked,
+    largura: Number($('#share-qualidade').value),
+    fps: Number($('#share-fps').value),
+  });
+};
+
+async function apresentar(opcoes = {}) {
+  const {
+    surface = 'window', comAudio = true,
+    largura = qualidadeTransmissao, fps = fpsTransmissao,
+  } = opcoes;
 
   try {
-    const { teto, temAudio } = await malha.iniciarTela(qualidadeTransmissao, fpsTransmissao);
+    const { teto, temAudio } = await malha.iniciarTela(largura, fps, surface, comAudio);
     eu.apresentando = true;
     const p = pares.get(eu.id);
     if (p) { p.apresentando = true; pinta(p); }
@@ -1757,6 +1905,78 @@ $('#chat-texto').addEventListener('input', () => {
   if (agora - ultimoAvisoDigitando < 2000) return;
   ultimoAvisoDigitando = agora;
   manda({ t: 'digitando' });
+});
+
+// ---------------------------------------------------------------- composer: menção, emoji, imagem
+
+function fecharMentionMenu() { $('#mention-menu').hidden = true; }
+function fecharEmojiPicker() { $('#emoji-picker').hidden = true; }
+
+function abrirMentionMenu() {
+  fecharEmojiPicker();
+  const menu = $('#mention-menu');
+  const outros = [...pares.values()].filter((p) => !p.sou);
+  menu.innerHTML = '<span>Marcar alguém</span>';
+  const todos = cria('button');
+  todos.type = 'button';
+  todos.innerHTML = '<strong>@all</strong>';
+  todos.onclick = () => inserirNoComposer('@all ');
+  menu.append(todos);
+  for (const p of outros) {
+    const btn = cria('button');
+    btn.type = 'button';
+    btn.innerHTML = `<strong>@${p.nome}</strong>`;
+    btn.onclick = () => inserirNoComposer(`@${p.nome} `);
+    menu.append(btn);
+  }
+  menu.hidden = false;
+}
+
+function inserirNoComposer(texto) {
+  const campo = $('#chat-texto');
+  const inicio = campo.selectionStart ?? campo.value.length;
+  const fim = campo.selectionEnd ?? campo.value.length;
+  campo.value = campo.value.slice(0, inicio) + texto + campo.value.slice(fim);
+  const pos = inicio + texto.length;
+  campo.setSelectionRange(pos, pos);
+  campo.focus();
+  fecharMentionMenu();
+  fecharEmojiPicker();
+}
+
+$('#ct-mencao').onclick = (e) => { e.stopPropagation(); abrirMentionMenu(); };
+
+// Curadoria pequena de propósito — o resto do teclado do próprio sistema já
+// tem o emoji completo; isto é só um atalho para os mais usados num chat.
+const EMOJIS = ['😀','😂','😍','😅','🤔','😮','😢','😡','👍','👎','🙏','👏','🎉','🔥','💜','✅','❌','😴','🙌','🚀','😉','😭','🤝','👀','💡','⏰','📌','☕','🎧','🖥️'];
+
+function abrirEmojiPicker() {
+  fecharMentionMenu();
+  const grade = $('#emoji-picker .emoji-picker-grade');
+  if (!grade.childElementCount) {
+    for (const e of EMOJIS) {
+      const btn = cria('button');
+      btn.type = 'button';
+      btn.textContent = e;
+      btn.onclick = () => inserirNoComposer(e);
+      grade.append(btn);
+    }
+  }
+  $('#emoji-picker').hidden = false;
+}
+
+$('#ct-emoji').onclick = (e) => { e.stopPropagation(); abrirEmojiPicker(); };
+
+$('#ct-imagem').onclick = () => {
+  // Sem servidor de upload, o único jeito honesto de anexar imagem é por
+  // link — que já vira cartão de imagem/GIF na mensagem, não um link cru.
+  const url = prompt('Cole o link de uma imagem ou GIF:');
+  if (url && url.trim()) inserirNoComposer(url.trim() + ' ');
+};
+
+addEventListener('click', (e) => {
+  if (!e.target.closest('#mention-menu, #ct-mencao')) fecharMentionMenu();
+  if (!e.target.closest('#emoji-picker, #ct-emoji')) fecharEmojiPicker();
 });
 
 const digitandoAgora = new Map(); // id -> timestamp visto por último
