@@ -628,7 +628,11 @@ const malha = (() => {
       enviar(id, { telaId: s.id });
       for (const t of s.getTracks()) c.pc.addTrack(t, s);
     }
-    return ajustarBanda();
+    // Safari (e alguns Linux sem PulseAudio configurado) aceitam audio:true
+    // sem reclamar e simplesmente devolvem a captura sem faixa de áudio
+    // nenhuma — silencioso dos dois lados, sem erro para avisar quem
+    // apresenta que ninguém vai ouvir o som da tela.
+    return { teto: ajustarBanda(), temAudio: s.getAudioTracks().length > 0 };
   }
 
   // Mudar a qualidade com a apresentação já em andamento evita o incômodo de
@@ -1257,7 +1261,7 @@ async function apresentar() {
   if (outro) return avisa(`${outro.nome} já está apresentando. Uma tela por vez.`);
 
   try {
-    const teto = await malha.iniciarTela(qualidadeTransmissao, fpsTransmissao);
+    const { teto, temAudio } = await malha.iniciarTela(qualidadeTransmissao, fpsTransmissao);
     eu.apresentando = true;
     const p = pares.get(eu.id);
     if (p) { p.apresentando = true; pinta(p); }
@@ -1272,6 +1276,14 @@ async function apresentar() {
     if (malha.tamanho > 4) {
       const mbps = Math.round((teto * malha.tamanho) / 1e5) / 10;
       avisa(`Apresentando para ${malha.tamanho} pessoas: cerca de ${mbps} Mbps de upload.`);
+    }
+
+    // Por último e fixo: sem isto a pessoa só descobre que ninguém ouviu nada
+    // quando alguém reclamar no chat — o navegador nunca recusa, só entrega a
+    // captura sem a faixa de áudio, em silêncio dos dois lados. Vem depois do
+    // aviso de banda de propósito, para não ser apagado por ele no mesmo balão.
+    if (!temAudio) {
+      avisa('Sua tela está sendo compartilhada sem áudio — este navegador não captura o som do sistema. A imagem chega normalmente.', true);
     }
   } catch (e) {
     if (e.name !== 'NotAllowedError') avisa('Não consegui capturar a tela: ' + e.message);
