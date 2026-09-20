@@ -128,3 +128,23 @@ Poder natural de admin que ficou de fora do kick por escopo: parar de aceitar
 gente nova sem precisar trocar o link. Barato de fazer — um campo a mais no
 Durable Object (`trancada: bool`), um comando `{t:'trancar'}` só para admin,
 e recusar `acceptWebSocket` com um erro claro quando estiver trancada.
+
+## Do reskin de 2026-09-20 (interface nexo/knot, sem logo)
+
+Ficou de fora por não ter dado real por trás no mock original — decorativo,
+sem mecanismo de sincronizar entre participantes:
+
+- **Foto de perfil e ícones de avatar predefinidos.** O mock guarda isso só
+  localmente; mostrar sua escolha para os outros exigiria um jeito de
+  compartilhar imagem entre participantes que o Vereda não tem hoje.
+- **Título pessoal** (subtítulo abaixo do nome, tipo "Bom demais no CS").
+  Simples de adicionar — um campo a mais no protocolo de entrada — só não
+  foi pedido desta vez.
+- **Busca dentro do chat.** Moderado, cliente-only, sem protocolo novo.
+
+## Silenciar/ajustar volume remotamente
+
+Diferente do volume local já implementado (que só muda o que VOCÊ ouve): o
+admin poder abaixar ou mutar o áudio de alguém para TODOS na sala, não só
+para si. Pediria um comando novo no protocolo (parecido com `kick`), com a
+mesma verificação de admin no servidor.
