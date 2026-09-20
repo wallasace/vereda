@@ -266,9 +266,23 @@ export class Room {
       case 'chat': {
         const text = String(msg.text ?? '').slice(0, 2000);
         if (!text.trim()) return;
-        this.broadcast({ t: 'chat', from: me.id, name: me.name, text, ts: Date.now() });
+        // replyTo é só decoração (nome e texto de outra mensagem, para
+        // mostrar a citação) — não é verificado contra o histórico, porque o
+        // servidor não guarda histórico nenhum.
+        let replyTo;
+        if (msg.replyTo && typeof msg.replyTo === 'object') {
+          replyTo = {
+            name: String(msg.replyTo.name ?? '').slice(0, 40),
+            text: String(msg.replyTo.text ?? '').slice(0, 300),
+          };
+        }
+        this.broadcast({ t: 'chat', from: me.id, name: me.name, text, ts: Date.now(), replyTo });
         break;
       }
+
+      case 'digitando':
+        this.broadcast({ t: 'digitando', id: me.id }, ws);
+        break;
 
       case 'state': {
         const muted = !!msg.muted;

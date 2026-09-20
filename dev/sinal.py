@@ -301,12 +301,20 @@ class Alça(BaseHTTPRequestHandler):
         elif t == "chat":
             texto = str(m.get("text", ""))[:2000]
             if texto.strip():
+                resposta_a = m.get("replyTo")
+                reply_to = None
+                if isinstance(resposta_a, dict):
+                    reply_to = {"name": str(resposta_a.get("name", ""))[:40],
+                                "text": str(resposta_a.get("text", ""))[:300]}
                 # `time` já é importado no topo do arquivo; um import local
                 # aqui tornaria o nome local à função inteira e quebraria o
                 # `eu.visto = time.time()` de cima, derrubando a conexão a
                 # cada mensagem — foi exatamente esse bug que apareceu aqui.
                 difunde(sala, {"t": "chat", "from": eu.id, "name": eu.nome,
-                               "text": texto, "ts": int(time.time() * 1000)})
+                               "text": texto, "ts": int(time.time() * 1000), "replyTo": reply_to})
+
+        elif t == "digitando":
+            difunde(sala, {"t": "digitando", "id": eu.id}, menos=eu)
 
         elif t == "state":
             quer = bool(m.get("sharing"))
