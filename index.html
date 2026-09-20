@@ -984,13 +984,25 @@ function toca(stream) {
   const a = cria('audio');
   a.autoplay = true;
   a.playsInline = true;
-  a.srcObject = stream;
-  if (saidaEscolhida && 'setSinkId' in a) a.setSinkId(saidaEscolhida).catch(() => {});
+  // setSinkId antes de o elemento estar no documento e antes de tocar é onde
+  // o pedido de saída ficava sem efeito em alguns Chromium (Mac e Windows,
+  // pelo relato): a troca "funcionava" sem erro nenhum, mas o áudio seguia
+  // saindo pela saída padrão. Anexar primeiro, tocar, só então aplicar a
+  // saída — e reaplicar quando o áudio realmente começa a rodar — é o que
+  // fez a troca colar de verdade nos relatos parecidos que encontrei.
   $('#audios').append(a);
+  a.srcObject = stream;
+  aplicarSaidaEm(a);
   // O navegador pode recusar o áudio automático mesmo depois do clique em
   // Entrar. Quando recusa, avisa em vez de ficar mudo em silêncio.
-  a.play().catch(() => avisa('Toque em qualquer lugar da página para liberar o áudio.', true));
+  a.play().then(() => aplicarSaidaEm(a))
+    .catch(() => avisa('Toque em qualquer lugar da página para liberar o áudio.', true));
   return a;
+}
+
+function aplicarSaidaEm(audioEl) {
+  if (!saidaEscolhida || !('setSinkId' in audioEl)) return;
+  audioEl.setSinkId(saidaEscolhida).catch((e) => console.warn('setSinkId', audioEl, e));
 }
 
 // ---------------------------------------------------------------- dispositivos e qualidade
@@ -1102,12 +1114,24 @@ $('#c-saida').onchange = async (e) => {
   saidaEscolhida = e.target.value;
   localStorage.setItem('vereda:saida', saidaEscolhida);
   const audios = [...document.querySelectorAll('#audios audio')].filter((a) => 'setSinkId' in a);
+
+  // Sem ninguém mais na sala ainda (ou todos mudos), não existe nenhum
+  // <audio> tocando — a escolha fica salva e vale para quem entrar depois,
+  // mas testar agora não muda nada de propósito, e sem avisar isso parece
+  // o seletor quebrado.
+  if (!audios.length) {
+    avisa('Escolha salva. Ainda não há ninguém com áudio tocando para testar agora — vale a partir da próxima vez.');
+    return;
+  }
+
   const resultados = await Promise.allSettled(audios.map((a) => a.setSinkId(saidaEscolhida)));
   // Sem isto, um setSinkId recusado pelo navegador ficava em silêncio — a
   // troca parecia não ter feito nada, e não havia como saber se o problema
   // era o app ou uma restrição do navegador.
-  if (audios.length && resultados.every((r) => r.status === 'rejected')) {
+  if (resultados.every((r) => r.status === 'rejected')) {
     avisa('Seu navegador recusou trocar a saída de som. Alguns modos de privacidade mais restritos bloqueiam isso.');
+  } else {
+    avisa('Saída de som trocada.');
   }
 };
 
