@@ -396,6 +396,10 @@ details.avancado > div { margin-top: 10px; }
 .ctx-menu button svg { width: 15px; flex: 0 0 auto; }
 .ctx-menu button.marcado { color: #a891ff; }
 .ctx-menu button.perigo { color: var(--red); }
+.ctx-menu .ctx-slider { padding: 6px 11px 10px; }
+.ctx-menu .ctx-slider-topo { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 8px; color: #cdc9d8; }
+.ctx-menu .ctx-slider-topo strong { color: #eeeaf5; font-weight: 650; }
+.ctx-menu input[type=range] { width: 100%; accent-color: var(--blue); height: 4px; cursor: pointer; }
 
 /* position:fixed de propósito: um aviso em fluxo normal empurrava a sala
    inteira para baixo sem a altura se recalcular, sobrando um pedaço da tela
@@ -591,6 +595,9 @@ details.avancado > div { margin-top: 10px; }
               </label>
             </div>
           </div>
+          <button class="ctrl ligado" id="b-audio" title="Áudio recebido">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 18v-6a9 9 0 0118 0v6"/><path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z"/></svg><span id="b-audio-txt">Áudio</span>
+          </button>
           <button class="ctrl" id="b-config" title="Configurar dispositivos">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
               <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1-1.6 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/>
@@ -789,6 +796,7 @@ let saidaEscolhida = localStorage.getItem('vereda:saida') || '';
 let qualidadeTransmissao = Number(localStorage.getItem('vereda:qualidade')) || 1280;
 let fpsTransmissao = Number(localStorage.getItem('vereda:fps')) || 12;
 let vigiaCpu = null;
+let ensurdecido = false; // botão de áudio geral — silencia tudo que vem de fora, sem mexer no volume de ninguém
 
 // ---------------------------------------------------------------- nível de voz
 // Um laço só para todos os medidores: cada AnalyserNode extra custa quase nada,
@@ -823,6 +831,40 @@ const esquecerNivel = (id) => niveis.delete(id);
   }
   requestAnimationFrame(pulso);
 })();
+
+// ---------------------------------------------------------------- efeitos sonoros
+// Sintetizados na hora (dois osciladores curtos), sem arquivo nenhum pra
+// baixar. Entrar/sair tocam pra sala inteira (e respeitam o áudio geral
+// desligado — quem não quer ouvir a sala também não quer ouvir isto);
+// mutar/desmutar microfone ou áudio geral é feedback direto de quem
+// clicou e toca sempre, é a confirmação do próprio clique.
+function tocarEfeito(tipo) {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    const notas = {
+      entrou: [[440, 0], [660, 0.09]],
+      saiu: [[520, 0], [340, 0.09]],
+      muta: [[300, 0]],
+      desmuta: [[520, 0]],
+    }[tipo];
+    if (!notas) return;
+    const agora = audioCtx.currentTime;
+    for (const [freq, atraso] of notas) {
+      const osc = audioCtx.createOscillator();
+      const ganho = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const t0 = agora + atraso;
+      ganho.gain.setValueAtTime(0, t0);
+      ganho.gain.linearRampToValueAtTime(0.11, t0 + 0.015);
+      ganho.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+      osc.connect(ganho).connect(audioCtx.destination);
+      osc.start(t0);
+      osc.stop(t0 + 0.18);
+    }
+  } catch (e) { console.warn('efeito sonoro', e); }
+}
 
 // ---------------------------------------------------------------- cancelamento de ruído
 // Um gate roda no navegador de quem fala (AudioWorklet, sem biblioteca
@@ -1248,6 +1290,7 @@ function trata(m) {
       poePar(m);
       malha.abrir(m.id);
       sistema(`${m.name} entrou` + (m.admin ? ' (admin)' : ''));
+      if (!ensurdecido) tocarEfeito('entrou');
       break;
 
     case 'leave': {
@@ -1256,6 +1299,7 @@ function trata(m) {
       malha.fechar(m.id);
       tiraPar(m.id);
       palco();
+      if (!ensurdecido) tocarEfeito('saiu');
       break;
     }
 
@@ -1319,6 +1363,21 @@ function abrirMenuContexto(x, y, blocos) {
       menu.append(d);
     } else if (b.tipo === 'separador') {
       menu.append(cria('hr'));
+    } else if (b.tipo === 'slider') {
+      const wrap = cria('div', 'ctx-slider');
+      const topo = cria('div', 'ctx-slider-topo');
+      const rotulo = cria('strong');
+      const valorInicial = Math.round(b.valor * 100);
+      rotulo.textContent = valorInicial + '%';
+      topo.innerHTML = `<span>${b.texto}</span>`;
+      topo.append(rotulo);
+      const input = cria('input');
+      input.type = 'range';
+      input.min = '0'; input.max = '100'; input.step = '1';
+      input.value = String(valorInicial);
+      input.oninput = () => { rotulo.textContent = input.value + '%'; b.onInput(Number(input.value) / 100); };
+      wrap.append(topo, input);
+      menu.append(wrap);
     } else {
       const btn = cria('button');
       btn.type = 'button';
@@ -1336,7 +1395,9 @@ function abrirMenuContexto(x, y, blocos) {
   menu.style.top = Math.min(y, innerHeight - r.height - 8) + 'px';
 }
 
-addEventListener('click', fecharMenuContexto);
+// Sem o closest(), soltar o dedo do slider de volume (que dispara um clique
+// no próprio input) fechava o menu no meio do ajuste.
+addEventListener('click', (e) => { if (!e.target.closest('#ctx-menu')) fecharMenuContexto(); });
 addEventListener('keydown', (e) => { if (e.key === 'Escape') fecharMenuContexto(); });
 addEventListener('scroll', fecharMenuContexto, true);
 
@@ -1362,12 +1423,14 @@ function poePar(p) {
   f.append(estado, av, nm, selo);
 
   if (!par.sou) {
-    par.volumeIndice = 0; // 1 = nítido
+    par.volume = 1;
+    par.volumeAnterior = 1; // pra onde volta ao desmutar com um clique rápido
     const botaoVolume = cria('button', 'volume-local');
     botaoVolume.type = 'button';
     botaoVolume.title = 'Volume só para você — não afeta o que os outros ouvem';
     botaoVolume.onclick = () => {
-      par.volumeIndice = (par.volumeIndice + 1) % NIVEIS_VOLUME.length;
+      if (par.volume > 0) { par.volumeAnterior = par.volume; par.volume = 0; }
+      else par.volume = par.volumeAnterior || 1;
       aplicarVolumeLocal(par);
     };
     f.append(botaoVolume);
@@ -1419,10 +1482,11 @@ function tiraPar(id) {
 const ICONE_MUDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" class="mudo"><path d="M3 3l18 18"/><path d="M9 9v3a3 3 0 004.6 2.5"/><path d="M15 11V5a3 3 0 00-5.9-.7"/><path d="M5 11a7 7 0 0010.3 6.2M12 19v3"/></svg>';
 const ICONE_TELA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" class="partilha"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/></svg>';
 
-// Três estados, um clique de cada vez: nítido -> baixo -> mudo -> nítido. Só
+// O ícone da ficha só tem três estados visuais (alto/baixo/mudo), mas o
+// volume em si é contínuo — ajustado pelo slider no menu de contexto. Só
 // para quem assiste, e só de um lado — não avisa a outra pessoa, porque é
 // volume local, não mudo de verdade.
-const NIVEIS_VOLUME = [1, 0.35, 0];
+function indiceIconeVolume(vol) { return vol === 0 ? 2 : vol < 0.5 ? 1 : 0; }
 const ICONES_VOLUME = [
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 9v6h4l5 5V4L8 9H4z"/><path d="M17 8a5 5 0 010 8"/><path d="M20 5a9 9 0 010 14"/></svg>',
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 9v6h4l5 5V4L8 9H4z"/><path d="M17 8a5 5 0 010 8"/></svg>',
@@ -1441,14 +1505,17 @@ function pinta(p) {
 }
 
 // O volume local mexe só no <audio> deste navegador — não passa pela rede,
-// então não muda nada do que os outros participantes ouvem.
+// então não muda nada do que os outros participantes ouvem. ensurdecido
+// (botão de áudio geral) some com tudo por cima, sem mexer no par.volume de
+// cada pessoa — volta exatamente de onde estava ao reativar o áudio geral.
 function aplicarVolumeLocal(par) {
-  const vol = NIVEIS_VOLUME[par.volumeIndice];
+  const vol = ensurdecido ? 0 : par.volume;
   if (par.audio) par.audio.volume = vol;
   if (par.telaAudio) par.telaAudio.volume = vol;
   if (par.botaoVolume) {
-    par.botaoVolume.innerHTML = ICONES_VOLUME[par.volumeIndice];
-    par.botaoVolume.className = 'volume-local ' + CLASSES_VOLUME[par.volumeIndice];
+    const i = indiceIconeVolume(par.volume);
+    par.botaoVolume.innerHTML = ICONES_VOLUME[i];
+    par.botaoVolume.className = 'volume-local ' + CLASSES_VOLUME[i];
   }
 }
 
@@ -1468,14 +1535,15 @@ function blocosMenuParticipante(par) {
   return [
     { tipo: 'label', texto: par.nome, sub: par.admin ? 'Admin da sala' : undefined },
     { tipo: 'separador' },
-    { tipo: 'item', texto: 'Mutar só para mim', icone: ICONES_VOLUME[1],
-      marcado: par.volumeIndice === 2,
-      onClick: () => { par.volumeIndice = par.volumeIndice === 2 ? 0 : 2; aplicarVolumeLocal(par); } },
-    ...NIVEIS_VOLUME.map((v, i) => ({
-      tipo: 'item', texto: 'Volume local: ' + (i === 0 ? 'Nítido' : i === 1 ? 'Baixo' : 'Mudo'),
-      marcado: par.volumeIndice === i,
-      onClick: () => { par.volumeIndice = i; aplicarVolumeLocal(par); },
-    })),
+    { tipo: 'item', texto: 'Mutar só para mim', icone: ICONES_VOLUME[2],
+      marcado: par.volume === 0,
+      onClick: () => {
+        if (par.volume > 0) { par.volumeAnterior = par.volume; par.volume = 0; }
+        else par.volume = par.volumeAnterior || 1;
+        aplicarVolumeLocal(par);
+      } },
+    { tipo: 'slider', texto: 'Volume local', valor: par.volume,
+      onInput: (v) => { par.volume = v; aplicarVolumeLocal(par); } },
     { tipo: 'separador' },
     { tipo: 'item', texto: `Mensagem com @${par.nome}`, icone: ICONE_MENSAGEM,
       onClick: () => { iniciarMencao(par.nome); } },
@@ -1933,6 +2001,21 @@ $('#b-mic').onclick = () => {
   if (p) { p.mudo = eu.mudo; pinta(p); }
   manda({ t: 'state', muted: eu.mudo, sharing: eu.apresentando });
   botaoMic();
+  tocarEfeito(eu.mudo ? 'muta' : 'desmuta');
+};
+
+function botaoAudioGeral() {
+  const b = $('#b-audio');
+  b.classList.toggle('ligado', !ensurdecido);
+  b.classList.toggle('desligado', ensurdecido);
+  $('#b-audio-txt').textContent = ensurdecido ? 'Sem áudio' : 'Áudio';
+}
+
+$('#b-audio').onclick = () => {
+  ensurdecido = !ensurdecido;
+  for (const p of pares.values()) if (!p.sou) aplicarVolumeLocal(p);
+  botaoAudioGeral();
+  tocarEfeito(ensurdecido ? 'muta' : 'desmuta');
 };
 
 $('#b-tela').onclick = () => (eu.apresentando ? pararApresentar() : abrirDialogoCompartilhar());
