@@ -265,7 +265,13 @@ export class Room {
 
       case 'chat': {
         const text = String(msg.text ?? '').slice(0, 2000);
-        if (!text.trim()) return;
+        // Imagem vai embutida como data-URL, já comprimida no navegador do
+        // remetente — o servidor só valida formato e tamanho, sem guardar.
+        let imagem;
+        if (typeof msg.imagem === 'string' && msg.imagem.length <= 500000 && /^data:image\/(png|jpe?g|webp|gif);base64,/.test(msg.imagem)) {
+          imagem = msg.imagem;
+        }
+        if (!text.trim() && !imagem) return;
         // replyTo é só decoração (nome e texto de outra mensagem, para
         // mostrar a citação) — não é verificado contra o histórico, porque o
         // servidor não guarda histórico nenhum.
@@ -276,7 +282,7 @@ export class Room {
             text: String(msg.replyTo.text ?? '').slice(0, 300),
           };
         }
-        this.broadcast({ t: 'chat', from: me.id, name: me.name, text, ts: Date.now(), replyTo });
+        this.broadcast({ t: 'chat', from: me.id, name: me.name, text, ts: Date.now(), replyTo, imagem });
         break;
       }
 

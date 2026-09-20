@@ -22,7 +22,7 @@ Não use isto em produção: sem limite de abuso, sem autenticação, e fala
 WebSocket no mínimo necessário para funcionar num navegador moderno.
 """
 
-import base64, hashlib, json, os, socket, ssl, struct, subprocess, sys, threading, time, uuid, urllib.request
+import base64, hashlib, json, os, re, socket, ssl, struct, subprocess, sys, threading, time, uuid, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -300,7 +300,11 @@ class Alça(BaseHTTPRequestHandler):
 
         elif t == "chat":
             texto = str(m.get("text", ""))[:2000]
-            if texto.strip():
+            imagem = m.get("imagem")
+            if not (isinstance(imagem, str) and len(imagem) <= 500000
+                    and re.match(r"^data:image/(png|jpe?g|webp|gif);base64,", imagem)):
+                imagem = None
+            if texto.strip() or imagem:
                 resposta_a = m.get("replyTo")
                 reply_to = None
                 if isinstance(resposta_a, dict):
@@ -311,7 +315,8 @@ class Alça(BaseHTTPRequestHandler):
                 # `eu.visto = time.time()` de cima, derrubando a conexão a
                 # cada mensagem — foi exatamente esse bug que apareceu aqui.
                 difunde(sala, {"t": "chat", "from": eu.id, "name": eu.nome,
-                               "text": texto, "ts": int(time.time() * 1000), "replyTo": reply_to})
+                               "text": texto, "ts": int(time.time() * 1000),
+                               "replyTo": reply_to, "imagem": imagem})
 
         elif t == "digitando":
             difunde(sala, {"t": "digitando", "id": eu.id}, menos=eu)
