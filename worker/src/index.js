@@ -8,27 +8,59 @@
 // Uma sala = um Durable Object, nomeado pelo código da sala. Quem entrar com o
 // mesmo código cai no mesmo objeto, em qualquer lugar do mundo.
 
-const CORS = {
-  'access-control-allow-origin': '*',
+// O endereço do Worker é público — está embutido no HTML do app, que por sua
+// vez está num repositório público. Sem checar de onde o pedido vem, qualquer
+// site poderia apontar para cá e gastar a cota gratuita em nome desta conta.
+//
+// Vale a ressalva: isto barra reaproveitamento casual (alguém copiar o app e
+// esquecer de trocar o servidor) e o app embutido em outro site, porque só um
+// navegador de verdade manda um Origin que não dá para falsificar em nome de
+// outro site. Não barra um script dedicado fora do navegador — esse pode
+// simplesmente inventar o cabeçalho Origin que quiser. Contra isso, a defesa
+// seria outra (token por sessão, limite de taxa), não uma checagem de Origin.
+const ORIGENS_PADRAO = ['https://wallasace.github.io'];
+
+function origensPermitidas(env) {
+  const extra = (env.ORIGENS_EXTRA || '').split(',').map((o) => o.trim()).filter(Boolean);
+  return new Set([...ORIGENS_PADRAO, ...extra]);
+}
+
+function origemPermitida(origem, env) {
+  if (!origem) return false; // navegador sempre manda Origin nisto; sem ela, não é um navegador.
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origem)) return true; // desenvolvimento local
+  return origensPermitidas(env).has(origem);
+}
+
+const corsHeaders = (origem) => ({
+  'access-control-allow-origin': origem,
   'access-control-allow-methods': 'GET, POST, OPTIONS',
   'access-control-allow-headers': 'content-type',
-};
+  vary: 'origin', // a resposta muda conforme o Origin do pedido — não cacheável entre origens
+});
 
-const json = (body, status = 200) =>
+const json = (body, status, origem) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8', ...CORS },
+    headers: { 'content-type': 'application/json; charset=utf-8', ...(origem ? corsHeaders(origem) : {}) },
   });
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    const origem = request.headers.get('origin');
+    const permitida = origemPermitida(origem, env);
 
-    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+    if (request.method === 'OPTIONS') {
+      return permitida
+        ? new Response(null, { status: 204, headers: corsHeaders(origem) })
+        : json({ error: 'origin_not_allowed' }, 403, null);
+    }
+
+    if (!permitida) return json({ error: 'origin_not_allowed' }, 403, null);
 
     // O cliente pede os servidores ICE aqui em vez de trazê-los embutidos:
     // as credenciais do TURN são temporárias e não podem morar no HTML.
-    if (url.pathname === '/ice') return json(await iceServers(env));
+    if (url.pathname === '/ice') return json(await iceServers(env), 200, origem);
 
     const room = url.pathname.match(/^\/room\/([a-z0-9-]{1,64})$/i);
     if (room) {
@@ -36,7 +68,7 @@ export default {
       return env.ROOM.get(id).fetch(request);
     }
 
-    return json({ error: 'not_found' }, 404);
+    return json({ error: 'not_found' }, 404, origem);
   },
 };
 
