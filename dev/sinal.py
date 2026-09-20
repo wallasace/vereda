@@ -265,7 +265,10 @@ class Alça(BaseHTTPRequestHandler):
         elif t == "chat":
             texto = str(m.get("text", ""))[:2000]
             if texto.strip():
-                import time
+                # `time` já é importado no topo do arquivo; um import local
+                # aqui tornaria o nome local à função inteira e quebraria o
+                # `eu.visto = time.time()` de cima, derrubando a conexão a
+                # cada mensagem — foi exatamente esse bug que apareceu aqui.
                 difunde(sala, {"t": "chat", "from": eu.id, "name": eu.nome,
                                "text": texto, "ts": int(time.time() * 1000)})
 

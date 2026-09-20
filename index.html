@@ -442,6 +442,11 @@ const malha = (() => {
         if (!p.encodings?.length) p.encodings = [{}];
         p.encodings[0].maxBitrate = teto;
         p.encodings[0].maxFramerate = 12;
+        // Sob aperto, prefira segurar os 12fps e perder nitidez a segurar a
+        // nitidez e ir atrasando: um quadro borrado incomoda menos que um
+        // vídeo que trava e recupera aos solavancos. É também o que evita que
+        // os quadros se acumulem no codificador — a fonte real do atraso.
+        p.degradationPreference = 'maintain-framerate';
         s.setParameters(p).catch(() => {});
       }
     }
@@ -449,8 +454,13 @@ const malha = (() => {
   }
 
   async function iniciarTela() {
+    // 1080p mede quase o dobro dos pixels de 720p, e codificar cada quadro
+    // extra rouba CPU/GPU de quem apresenta — de um jogo rodando ao mesmo
+    // tempo, por exemplo — e é o que faz os quadros começarem a acumular no
+    // codificador em vez de sair na hora. Para texto e slides, a diferença de
+    // legibilidade é pequena; a diferença de fôlego da máquina não é.
     const s = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: { ideal: 12, max: 15 }, width: { max: 1920 } },
+      video: { frameRate: { ideal: 12, max: 15 }, width: { max: 1280 } },
       audio: true,
     });
     telaStream = s;
@@ -481,9 +491,6 @@ const malha = (() => {
     abrir, fechar, fecharTudo, receber, iniciarTela, pararTela, ajustarBanda,
     ligar(h) { aoAudio = h.aoAudio; aoTela = h.aoTela; aoRede = h.aoRede; },
     get tamanho() { return cons.size; },
-    // Só para diagnóstico: cada RTCPeerConnection, por id do par. Não é usado
-    // pelo resto do app.
-    get depuracao() { return cons; },
   };
 })();
 
@@ -966,75 +973,6 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
   addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
 }
 
-// --- DIAGNÓSTICO TEMPORÁRIO — investigação de latência, remover depois ---
-// A ferramenta de automação roda num mundo JS isolado do da página, então não
-// enxerga `malha` nem RTCPeerConnection.getStats() de fora. Um botão real,
-// escrevendo num elemento real, atravessa a fronteira porque o DOM é
-// compartilhado entre os dois mundos.
-// Botão real, criado pelo próprio mundo principal da página: só assim o
-// clique disparado de fora aciona um fechamento que enxerga `malha`.
-const __gatilho = document.createElement('button');
-__gatilho.id = '__gatilho-depuracao';
-__gatilho.style.display = 'none';
-__gatilho.onclick = () => __depurar();
-document.body.append(__gatilho);
-
-async function __depurar() {
-  const linhas = [];
-  for (const [id, c] of malha.depuracao) {
-    for (const s of c.pc.getSenders()) {
-      if (s.track) linhas.push('FAIXA-ENVIADA ' + id + ' ' + JSON.stringify({
-        tipo: s.track.kind, estado: s.track.readyState, mudo: s.track.muted, habilitado: s.track.enabled,
-      }));
-    }
-    for (const r of c.pc.getReceivers()) {
-      if (r.track) linhas.push('FAIXA-RECEBIDA ' + id + ' ' + JSON.stringify({
-        tipo: r.track.kind, estado: r.track.readyState, mudo: r.track.muted, habilitado: r.track.enabled,
-      }));
-    }
-    linhas.push('ESTADO ' + id + ' ' + JSON.stringify({
-      conexao: c.pc.connectionState, sinalizacao: c.pc.signalingState, ice: c.pc.iceConnectionState,
-    }));
-    const rel = await c.pc.getStats();
-    rel.forEach((r) => {
-      if (r.type === 'outbound-rtp' && r.kind === 'video') {
-        linhas.push('SAÍDA ' + id + ' ' + JSON.stringify({
-          resolucao: r.frameWidth + 'x' + r.frameHeight,
-          fps: r.framesPerSecond,
-          encode_ms_por_frame: r.framesEncoded ? +(r.totalEncodeTime / r.framesEncoded * 1000).toFixed(1) : null,
-          limitacao: r.qualityLimitationReason,
-          limitacao_duracoes: r.qualityLimitationDurations,
-          bitrate_alvo: r.targetBitrate,
-          bytes_enviados: r.bytesSent,
-        }));
-      }
-      if (r.type === 'inbound-rtp' && r.kind === 'video') {
-        linhas.push('ENTRADA ' + id + ' ' + JSON.stringify({
-          resolucao: r.frameWidth + 'x' + r.frameHeight,
-          fps: r.framesPerSecond,
-          buffer_jitter_ms: r.jitterBufferEmittedCount ? +(r.jitterBufferDelay / r.jitterBufferEmittedCount * 1000).toFixed(1) : null,
-          decode_ms_por_frame: r.framesDecoded ? +(r.totalDecodeTime / r.framesDecoded * 1000).toFixed(1) : null,
-          congelamentos: r.freezeCount,
-          duracao_congelado_s: r.totalFreezesDuration,
-          quadros_perdidos: r.framesDropped,
-        }));
-      }
-      if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) {
-        linhas.push('CAMINHO ' + id + ' ' + JSON.stringify({
-          rtt_ms: r.currentRoundTripTime != null ? Math.round(r.currentRoundTripTime * 1000) : null,
-          tipo_local: r.localCandidateId, tipo_remoto: r.remoteCandidateId,
-        }));
-      }
-    });
-  }
-  const pre = document.createElement('pre');
-  pre.id = 'depuracao-saida';
-  pre.style.cssText = 'position:fixed;inset:0;background:#000;color:#0f0;z-index:9999;padding:20px;overflow:auto;font-size:11px;white-space:pre-wrap;';
-  pre.textContent = linhas.join('\n\n');
-  document.querySelector('#depuracao-saida')?.remove();
-  document.body.append(pre);
-}
-// --- fim do diagnóstico temporário ---
 })();
 </script>
 </body>
