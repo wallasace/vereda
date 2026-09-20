@@ -141,10 +141,11 @@ details.avancado > div { margin-top: 10px; }
 /* ---------- sala ---------- */
 #sala { display: none; height: 100%; }
 #sala.ativa { display: block; }
-#corpo { display: grid; grid-template-columns: minmax(0,1fr) 0; height: 100%; transition: grid-template-columns .18s;
+#corpo { display: grid; grid-template-columns: minmax(0,1fr) 0; grid-template-rows: minmax(0,1fr);
+         height: 100%; min-height: 0; overflow: hidden; transition: grid-template-columns .18s;
          background: radial-gradient(circle at 42% -10%, rgba(108,77,255,.13), transparent 28%), var(--bg); }
 #corpo.com-chat { grid-template-columns: minmax(0,1fr) 358px; }
-.room { min-width: 0; display: grid; grid-template-rows: 74px minmax(0,1fr) 92px; position: relative; }
+.room { min-width: 0; min-height: 0; display: grid; grid-template-rows: 74px minmax(0,1fr) 92px; position: relative; overflow: hidden; }
 
 .room-header { display: flex; align-items: center; justify-content: space-between; padding: 0 24px; border-bottom: 1px solid var(--line); }
 .room-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -163,7 +164,7 @@ details.avancado > div { margin-top: 10px; }
 .invite-btn svg, .chat-reopen svg { width: 16px; }
 
 .stage-wrap { min-height: 0; padding: 18px 22px 8px; }
-.stage-grid { display: grid; grid-template-rows: 1fr; gap: 12px; height: 100%; }
+.stage-grid { display: grid; grid-template-rows: 1fr; gap: 12px; height: 100%; min-height: 0; }
 #corpo.apresentando .stage-grid { grid-template-rows: minmax(220px,1fr) 118px; }
 #tela-wrap {
   position: relative; min-height: 0; overflow: hidden; border-radius: 20px; background: var(--panel);
@@ -198,7 +199,8 @@ details.avancado > div { margin-top: 10px; }
 }
 
 .grade {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(120px,1fr)); gap: 11px; min-height: 0; align-content: center;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,220px)); justify-content: center;
+  gap: 11px; min-height: 0; min-width: 0; align-content: center; overflow: auto;
 }
 #corpo.apresentando .grade {
   grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: 128px;
@@ -343,7 +345,16 @@ details.avancado > div { margin-top: 10px; }
 .ctx-menu button.marcado { color: #a891ff; }
 .ctx-menu button.perigo { color: var(--red); }
 
-.aviso-topo { background: var(--amber); color: #1a1408; padding: 8px 14px; font-size: 13px; text-align: center; display: none; position: relative; z-index: 25; }
+/* position:fixed de propósito: um aviso em fluxo normal empurrava a sala
+   inteira para baixo sem a altura se recalcular, sobrando um pedaço da tela
+   (barra de controles incluída) fora da área visível. Um aviso não devia
+   nunca mudar onde o resto da página está. */
+.aviso-topo {
+  position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 50;
+  max-width: min(92vw, 480px); background: var(--amber); color: #1a1408; padding: 9px 16px;
+  border-radius: 11px; font-size: 13px; text-align: center; box-shadow: 0 14px 34px rgba(0,0,0,.3);
+  display: none;
+}
 .aviso-topo.ativo { display: block; }
 .aviso-topo button { background: transparent; border: 0; text-decoration: underline; font-weight: 650; color: inherit; }
 .pilula { padding: 3px 9px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); font-size: 11px; color: var(--ink-faint); }
@@ -1040,6 +1051,45 @@ function cor(id) {
 }
 const inicial = (n) => (n.trim()[0] || '?').toUpperCase();
 
+// ---------------------------------------------------------------- menu de contexto
+
+const ICONE_MIC_ON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v4"/></svg>';
+const ICONE_MENSAGEM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>';
+const ICONE_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+
+function fecharMenuContexto() { $('#ctx-menu').hidden = true; }
+
+function abrirMenuContexto(x, y, blocos) {
+  const menu = $('#ctx-menu');
+  menu.innerHTML = '';
+  for (const b of blocos) {
+    if (b.tipo === 'label') {
+      const d = cria('div', 'ctx-label');
+      d.innerHTML = `${b.texto}${b.sub ? `<small>${b.sub}</small>` : ''}`;
+      menu.append(d);
+    } else if (b.tipo === 'separador') {
+      menu.append(cria('hr'));
+    } else {
+      const btn = cria('button');
+      btn.type = 'button';
+      if (b.marcado) btn.classList.add('marcado');
+      if (b.perigo) btn.classList.add('perigo');
+      btn.innerHTML = `${b.icone || ''}<span>${b.texto}</span>${b.marcado ? ICONE_CHECK : ''}`;
+      btn.onclick = () => { fecharMenuContexto(); b.onClick(); };
+      menu.append(btn);
+    }
+  }
+  menu.hidden = false;
+  // Mantém o menu dentro da tela em vez de deixar metade cortada na borda.
+  const r = menu.getBoundingClientRect();
+  menu.style.left = Math.min(x, innerWidth - r.width - 8) + 'px';
+  menu.style.top = Math.min(y, innerHeight - r.height - 8) + 'px';
+}
+
+addEventListener('click', fecharMenuContexto);
+addEventListener('keydown', (e) => { if (e.key === 'Escape') fecharMenuContexto(); });
+addEventListener('scroll', fecharMenuContexto, true);
+
 function poePar(p) {
   const id = p.id;
   if (pares.has(id)) return pares.get(id);
@@ -1087,6 +1137,43 @@ function poePar(p) {
       f.append(botaoExpulsar);
     }
   }
+
+  f.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    if (par.sou) {
+      abrirMenuContexto(e.clientX, e.clientY, [
+        { tipo: 'label', texto: par.nome, sub: 'Você' },
+        { tipo: 'separador' },
+        { tipo: 'item', texto: eu.mudo ? 'Ativar microfone' : 'Desativar microfone',
+          icone: eu.mudo ? ICONE_MUDO : ICONE_MIC_ON, onClick: () => $('#b-mic').click() },
+      ]);
+      return;
+    }
+    abrirMenuContexto(e.clientX, e.clientY, [
+      { tipo: 'label', texto: par.nome, sub: par.admin ? 'Admin da sala' : undefined },
+      { tipo: 'separador' },
+      { tipo: 'item', texto: 'Mutar só para mim', icone: ICONES_VOLUME[1],
+        marcado: par.volumeIndice === 2,
+        onClick: () => { par.volumeIndice = par.volumeIndice === 2 ? 0 : 2; aplicarVolumeLocal(par); } },
+      ...NIVEIS_VOLUME.map((v, i) => ({
+        tipo: 'item', texto: 'Volume local: ' + (i === 0 ? 'Nítido' : i === 1 ? 'Baixo' : 'Mudo'),
+        marcado: par.volumeIndice === i,
+        onClick: () => { par.volumeIndice = i; aplicarVolumeLocal(par); },
+      })),
+      { tipo: 'separador' },
+      { tipo: 'item', texto: `Mensagem com @${par.nome}`, icone: ICONE_MENSAGEM,
+        onClick: () => { iniciarMencao(par.nome); } },
+      ...(eu.admin ? [
+        { tipo: 'separador' },
+        { tipo: 'item', texto: `Expulsar ${par.nome}`, icone: ICONE_EXPULSAR, perigo: true,
+          onClick: () => {
+            if (confirm(`Expulsar ${par.nome} da sala? A pessoa pode voltar a entrar pelo mesmo link.`)) {
+              manda({ t: 'kick', id: par.id });
+            }
+          } },
+      ] : []),
+    ]);
+  });
 
   $('#grade').append(f);
 
@@ -1636,6 +1723,14 @@ $('#b-chat').onclick = () => alternarChat(!$('#corpo').classList.contains('com-c
 $('#b-chat-fechar').onclick = () => alternarChat(false);
 
 let respondendoA = null; // { id, name, text }
+
+function iniciarMencao(nome) {
+  alternarChat(true);
+  const campo = $('#chat-texto');
+  const atual = campo.value.replace(/@[^\s]*$/, '').trimEnd();
+  campo.value = `${atual}${atual ? ' ' : ''}@${nome} `;
+  campo.focus();
+}
 
 function iniciarResposta(id, nome, texto) {
   respondendoA = { id, name: nome, text: texto };
