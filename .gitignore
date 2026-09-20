@@ -6,3 +6,4 @@ worker/node_modules/
 dev/dev-cert.pem
 dev/dev-key.pem
 dev/dev-openssl.cnf
+worker/.dev.vars

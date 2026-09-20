@@ -54,6 +54,7 @@ export default {
     // não manda Origin nenhum), então esta rota tem seu próprio cadeado —
     // um token, não a checagem de Origin que protege /ice e /room.
     if (url.pathname === '/admin') return admin(request, url, env);
+    if (url.pathname === '/admin/kick') return adminKick(request, url, env);
 
     const origem = request.headers.get('origin');
     const permitida = origemPermitida(origem, env);
@@ -80,8 +81,16 @@ export default {
   },
 };
 
-// Painel bem pequeno de propósito: quantas salas e pessoas agora, e quantas
-// entradas desde sempre. Para requisições/dia, CPU e o resto da cota, o
+// Nomes e mensagens são digitados por qualquer pessoa que entra numa sala —
+// sem isto, alguém batizando o próprio nome de <script> executaria no
+// navegador de quem está olhando o painel.
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Painel de tráfego: quantas salas e pessoas agora (com nome de cada uma),
+// quantas entradas desde sempre, e um botão para expulsar alguém sem
+// precisar estar na sala. Para requisições/dia, CPU e o resto da cota, o
 // próprio painel da Cloudflare (Workers & Pages → vereda → Metrics) já
 // mostra tudo isso de graça, com mais precisão do que eu reproduziria aqui —
 // não faz sentido duplicar o que já existe e é mais confiável.
@@ -97,24 +106,83 @@ async function admin(request, url, env) {
 
   if (url.searchParams.get('formato') === 'json') return json(dados, 200, null);
 
+  const salas = Object.entries(dados.salas || {}).sort(([a], [b]) => a.localeCompare(b));
+  const tokenSeguro = escapeHtml(token);
+  const blocosSalas = salas.length
+    ? salas.map(([nome, s]) => `
+      <div class="sala">
+        <h2>${escapeHtml(nome)} <small>${s.pessoas.length} ${s.pessoas.length === 1 ? 'pessoa' : 'pessoas'}</small></h2>
+        <ul>
+          ${s.pessoas.map((p) => `
+            <li>
+              <span>${escapeHtml(p.nome)}</span>
+              <form method="post" action="/admin/kick" onsubmit="return confirm('Expulsar esta pessoa da sala?')">
+                <input type="hidden" name="token" value="${tokenSeguro}">
+                <input type="hidden" name="sala" value="${escapeHtml(nome)}">
+                <input type="hidden" name="id" value="${escapeHtml(p.id)}">
+                <button type="submit">Expulsar</button>
+              </form>
+            </li>`).join('')}
+        </ul>
+      </div>`).join('')
+    : '<p class="vazio">Nenhuma sala ativa agora.</p>';
+
   const pagina = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vereda — painel</title>
 <style>
-  body{background:#101722;color:#e8eef7;font:15px/1.5 -apple-system,sans-serif;max-width:480px;margin:40px auto;padding:0 20px}
+  body{background:#101722;color:#e8eef7;font:15px/1.5 -apple-system,sans-serif;max-width:560px;margin:40px auto;padding:0 20px}
   h1{font-size:20px}
+  h2{font-size:14px;font-weight:650;margin:0 0 8px;display:flex;align-items:baseline;gap:8px}
+  h2 small{color:#8494a9;font-weight:500;font-size:12px}
   .num{font-size:36px;font-weight:700;color:#7fb0ea}
   .linha{display:flex;justify-content:space-between;align-items:baseline;padding:14px 0;border-bottom:1px solid #2a3648}
+  .sala{background:#161f2e;border:1px solid #2a3648;border-radius:12px;padding:14px 16px;margin-bottom:12px}
+  .sala ul{list-style:none;margin:0;padding:0}
+  .sala li{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-top:1px solid #202b3d}
+  .sala li:first-child{border-top:0}
+  .sala form{margin:0}
+  .sala button{background:none;border:1px solid #4a2b33;color:#f0899a;border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer}
+  .sala button:hover{background:#2a1820}
+  .vazio{color:#8494a9;font-size:13px}
   a{color:#7fb0ea}
 </style></head><body>
 <h1>Vereda — painel</h1>
 <div class="linha"><span>Salas ativas agora</span><span class="num">${dados.salasAtivas}</span></div>
 <div class="linha"><span>Pessoas conectadas agora</span><span class="num">${dados.pessoasAgora}</span></div>
 <div class="linha"><span>Entradas desde sempre</span><span class="num">${dados.entradasTotais}</span></div>
+<h1 style="margin-top:28px">Salas agora</h1>
+${blocosSalas}
 <p style="color:#8494a9;font-size:13px;margin-top:24px">Requisições por dia, CPU e o resto da cota gratuita:
 <a href="https://dash.cloudflare.com" target="_blank">painel da Cloudflare</a> → Workers &amp; Pages → vereda → Metrics.</p>
 </body></html>`;
   return new Response(pagina, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+}
+
+// A senha de admin de uma sala manda em quem já está nela — isto aqui é o
+// dono do projeto mandando em qualquer sala, de fora, com o token do
+// painel. Por isso não passa pela checagem "me.admin" da sala: chega direto
+// no Room certo e expulsa, sem precisar estar entre os participantes.
+async function adminKick(request, url, env) {
+  if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405, null);
+  if (!env.ADMIN_TOKEN) return json({ error: 'admin_nao_configurado' }, 501, null);
+
+  const forma = await request.formData();
+  const token = String(forma.get('token') || '');
+  const sala = String(forma.get('sala') || '').toLowerCase();
+  const alvoId = String(forma.get('id') || '');
+
+  if (token !== env.ADMIN_TOKEN) return json({ error: 'unauthorized' }, 401, null);
+  if (!/^[a-z0-9-]{1,64}$/.test(sala) || !alvoId) return json({ error: 'parametros_invalidos' }, 400, null);
+
+  const id = env.ROOM.idFromName(sala);
+  await env.ROOM.get(id).fetch('http://room/expulsar', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: alvoId }),
+  });
+
+  return Response.redirect(`${url.origin}/admin?token=${encodeURIComponent(token)}`, 303);
 }
 
 // STUN só descobre o seu endereço público; quando a operadora usa CGNAT — o
@@ -164,12 +232,32 @@ export class Room {
     // Cloudflare — para essa segunda coisa, hash não mudaria nada, porque quem
     // lê o storage já tem acesso a tudo.
     this.senhaAdmin = null;
+    // O próprio nome da sala, extraído da URL de entrada e guardado — sem
+    // isto o DO não tem como saber seu nome depois de hibernar (o
+    // construtor roda de novo, mas não recebe a URL de quando foi criado),
+    // e é esse nome que o painel usa para agrupar quem está onde.
+    this.salaNome = null;
     state.blockConcurrencyWhile(async () => {
       this.senhaAdmin = (await state.storage.get('senhaAdmin')) || null;
+      this.salaNome = (await state.storage.get('salaNome')) || null;
     });
   }
 
   async fetch(request) {
+    const url = new URL(request.url);
+
+    // Vem do painel de admin (token do dono do projeto), não de dentro da
+    // sala — por isso não passa pelo "me.admin" de quem está conectado.
+    if (request.method === 'POST' && url.pathname === '/expulsar') {
+      const { id: alvoId } = await request.json();
+      const alvo = this.state.getWebSockets().find((s) => s.deserializeAttachment()?.id === alvoId);
+      if (!alvo) return json({ ok: false, error: 'not_found' }, 404);
+      const quemAlvo = alvo.deserializeAttachment();
+      try { alvo.close(4001, 'expulso pelo admin'); } catch {}
+      this.broadcast({ t: 'leave', id: quemAlvo.id, expulso: true });
+      return json({ ok: true }, 200);
+    }
+
     if (request.headers.get('upgrade') !== 'websocket') {
       return json({ error: 'expected_websocket' }, 426);
     }
@@ -177,7 +265,12 @@ export class Room {
     const sockets = this.state.getWebSockets();
     if (sockets.length >= this.cap) return json({ error: 'room_full', cap: this.cap }, 503);
 
-    const url = new URL(request.url);
+    const nomeDaUrl = url.pathname.match(/^\/room\/([a-z0-9-]{1,64})$/i)?.[1]?.toLowerCase();
+    if (nomeDaUrl && nomeDaUrl !== this.salaNome) {
+      this.salaNome = nomeDaUrl;
+      await this.state.storage.put('salaNome', this.salaNome);
+    }
+
     const name = (url.searchParams.get('name') || 'alguém').slice(0, 40);
     const senha = url.searchParams.get('senha') || '';
     const id = crypto.randomUUID().slice(0, 8);
@@ -202,11 +295,10 @@ export class Room {
     // Hibernação: o Durable Object pode dormir entre mensagens sem derrubar as
     // conexões, e o tempo ocioso não é cobrado. O estado de cada participante
     // viaja anexado ao próprio socket para sobreviver a esse sono.
-    const novaSala = sockets.length === 0;
     this.state.acceptWebSocket(server);
     server.serializeAttachment({ id, name, muted: false, sharing: false, admin, visto: Date.now() });
     await this.agendarRonda();
-    await this.reportar('entrou', { novaSala });
+    await this.reportar('entrou', { sala: this.salaNome, id, nome: name });
 
     const peers = sockets.map((ws) => ws.deserializeAttachment()).filter(Boolean);
 
@@ -365,8 +457,7 @@ export class Room {
     // Único lugar que conta saídas: fechamento normal, expulsão e a ronda de
     // fantasmas passam todos por aqui (fechar um socket sempre dispara isto),
     // então contar em mais de um lugar contaria a mesma saída duas vezes.
-    const salaVazia = this.state.getWebSockets().every((s) => s === ws);
-    await this.reportar('saiu', { salaVazia });
+    await this.reportar('saiu', { sala: this.salaNome, id: me.id });
   }
 
   broadcast(msg, except) {
@@ -382,16 +473,22 @@ export class Room {
   }
 }
 
-// Um único Durable Object, sempre com o mesmo nome ('global'), guardando só
-// três números. Room chama /evento a cada entrada e saída; o painel em
-// admin() lê o snapshot atual. Sem lista de salas nem de pessoas — só
-// contagem, que é tudo que "leve, conveniente, prático e eficiente" pedia.
+// Um único Durable Object, sempre com o mesmo nome ('global'), guardando
+// quem está em cada sala agora. Room chama /evento a cada entrada e saída;
+// o painel em admin() lê o snapshot atual pra mostrar salas, gente e
+// oferecer o botão de expulsar.
 export class Registro {
   constructor(state) {
     this.state = state;
-    this.dados = { salasAtivas: 0, pessoasAgora: 0, entradasTotais: 0 };
+    // salas: { [nome]: { pessoas: [{id, nome}] } } — salas ativas e pessoas
+    // são sempre calculadas a partir disto, nunca contadas à parte; um
+    // contador incrementado num lugar e decrementado noutro cedo ou tarde
+    // desalinha do que está de fato acontecendo. Só entradasTotais é uma
+    // soma histórica de verdade (nunca diminui).
+    this.dados = { entradasTotais: 0, salas: {} };
     state.blockConcurrencyWhile(async () => {
-      this.dados = (await state.storage.get('dados')) || this.dados;
+      const salvo = (await state.storage.get('dados')) || {};
+      this.dados = { entradasTotais: salvo.entradasTotais || 0, salas: salvo.salas || {} };
     });
   }
 
@@ -399,23 +496,37 @@ export class Registro {
     const url = new URL(request.url);
 
     if (request.method === 'POST' && url.pathname === '/evento') {
-      const { tipo, novaSala, salaVazia } = await request.json();
+      const { tipo, sala, id, nome } = await request.json();
 
-      if (tipo === 'entrou') {
-        this.dados.pessoasAgora++;
+      // Sala vem de this.salaNome no Room, guardado só na primeira entrada
+      // depois do deploy desta versão — uma sala já aberta antes disso
+      // reporta sala:null até a hibernação seguinte, e o evento é ignorado
+      // (não dá pra agrupar numa sala cujo nome ainda não se sabe). Some
+      // sozinho assim que a sala esvaziar e reabrir.
+      if (sala && tipo === 'entrou') {
         this.dados.entradasTotais++;
-        if (novaSala) this.dados.salasAtivas++;
-      } else if (tipo === 'saiu') {
-        this.dados.pessoasAgora = Math.max(0, this.dados.pessoasAgora - 1);
-        if (salaVazia) this.dados.salasAtivas = Math.max(0, this.dados.salasAtivas - 1);
+        const s = this.dados.salas[sala] || (this.dados.salas[sala] = { pessoas: [] });
+        s.pessoas.push({ id, nome });
+        await this.state.storage.put('dados', this.dados);
+      } else if (sala && tipo === 'saiu') {
+        const s = this.dados.salas[sala];
+        if (s) {
+          s.pessoas = s.pessoas.filter((p) => p.id !== id);
+          if (!s.pessoas.length) delete this.dados.salas[sala];
+          await this.state.storage.put('dados', this.dados);
+        }
       }
 
-      await this.state.storage.put('dados', this.dados);
       return new Response('ok');
     }
 
-    return new Response(JSON.stringify(this.dados), {
-      headers: { 'content-type': 'application/json' },
-    });
+    const salasAtivas = Object.keys(this.dados.salas).length;
+    const pessoasAgora = Object.values(this.dados.salas).reduce((n, s) => n + s.pessoas.length, 0);
+    return new Response(JSON.stringify({
+      entradasTotais: this.dados.entradasTotais,
+      salasAtivas,
+      pessoasAgora,
+      salas: this.dados.salas,
+    }), { headers: { 'content-type': 'application/json' } });
   }
 }
