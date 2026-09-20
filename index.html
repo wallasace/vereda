@@ -62,11 +62,16 @@ input { font: inherit; }
 label { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .07em;
         color: var(--ink-faint); margin: 0 0 6px; font-weight: 600; }
 .campo { margin-bottom: 16px; }
-input[type=text] {
+input[type=text], select {
   width: 100%; padding: 11px 13px; background: var(--bg); color: var(--ink);
   border: 1px solid var(--line); border-radius: 10px; outline: none;
+  font: inherit;
 }
-input[type=text]:focus { border-color: var(--blue); }
+input[type=text]:focus, select:focus { border-color: var(--blue); }
+.link-config {
+  background: none; border: 0; color: var(--blue); font-size: 12.5px;
+  padding: 6px 0 0; text-decoration: underline; cursor: pointer;
+}
 .botao {
   width: 100%; padding: 12px; border: 0; border-radius: 10px; font-weight: 600;
   background: var(--blue); color: #08111d; transition: filter .15s;
@@ -171,6 +176,32 @@ details.avancado > div { margin-top: 12px; }
 .aviso-topo { background: var(--amber); color: #08111d; padding: 8px 14px; font-size: 13px;
               text-align: center; display: none; }
 .aviso-topo.ativo { display: block; }
+
+/* ---------- configurações ---------- */
+.veu {
+  position: fixed; inset: 0; background: rgba(6,10,18,.6); z-index: 30;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.veu[hidden] { display: none; }
+.config-cartao {
+  width: min(100%, 380px); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 16px; padding: 22px; box-shadow: var(--shadow);
+}
+.config-topo { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.config-topo strong { font-size: 16px; }
+.fechar {
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--ink);
+  width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 14px; line-height: 1;
+}
+.config-dica { font-size: 12px; color: var(--ink-faint); margin: -10px 0 16px; }
+
+/* seletor de qualidade sobre o vídeo, ao lado de "Ocultar tela" */
+#b-qualidade-vista {
+  position: absolute; top: 10px; right: 128px; width: auto; padding: 6px 10px;
+  border-radius: 8px; border: 0; background: rgba(8,14,24,.72); color: #e8eef7;
+  font-size: 12.5px; backdrop-filter: blur(6px);
+}
+#b-qualidade-vista[hidden] { display: none; }
 .aviso-topo button { background: transparent; border: 0; text-decoration: underline; font-weight: 650; }
 @media (max-width: 620px) {
   .corpo.com-chat { grid-template-columns: 0 minmax(0, 1fr); }
@@ -217,6 +248,7 @@ details.avancado > div { margin-top: 12px; }
       <label>Microfone</label>
       <div class="medidor"><i id="f-nivel"></i></div>
       <div class="dica" id="f-mic">Pedindo permissão…</div>
+      <button type="button" class="link-config" id="f-config">Escolher dispositivo…</button>
     </div>
 
     <button class="botao" id="f-entrar" disabled>Entrar</button>
@@ -231,10 +263,16 @@ details.avancado > div { margin-top: 12px; }
       <div class="info">
         <span class="pilula" id="i-sala"></span>
         <span class="pilula acao" id="i-apresentando" hidden></span>
+        <span class="pilula aviso" id="i-qualidade-reduzida" hidden title="O codificador está sacrificando nitidez para acompanhar sua CPU">qualidade reduzida (CPU)</span>
         <span class="pilula" id="i-rede">conectando</span>
       </div>
       <div id="tela-wrap"><video id="tela" autoplay playsinline muted></video>
         <div class="legenda" id="tela-legenda"></div>
+        <select id="b-qualidade-vista" hidden title="Qualidade que você quer receber desta tela">
+          <option value="1">Nítido</option>
+          <option value="2" selected>Equilibrado</option>
+          <option value="4">Leve</option>
+        </select>
         <button class="ocultar" id="b-ocultar">Ocultar tela</button>
       </div>
       <div class="grade" id="grade"></div>
@@ -269,6 +307,11 @@ details.avancado > div { margin-top: 12px; }
         <path d="M10 13a5 5 0 007 0l3-3a5 5 0 00-7-7l-1 1"/><path d="M14 11a5 5 0 00-7 0l-3 3a5 5 0 007 7l1-1"/>
       </svg><span id="b-link-txt">Copiar link</span>
     </button>
+    <button class="ctrl" id="b-config">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1-1.6 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/>
+      </svg><span>Config</span>
+    </button>
     <button class="ctrl perigo" id="b-sair">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <path d="M16 17l5-5-5-5M21 12H9M9 3H6a2 2 0 00-2 2v14a2 2 0 002 2h3"/>
@@ -278,6 +321,33 @@ details.avancado > div { margin-top: 12px; }
 </section>
 
 <div id="audios" style="position:absolute;width:0;height:0;overflow:hidden"></div>
+
+<!-- ---------------- configurações ---------------- -->
+<div class="veu" id="config-veu" hidden>
+  <div class="config-cartao">
+    <div class="config-topo">
+      <strong>Configurações</strong>
+      <button class="fechar" id="config-fechar" aria-label="Fechar">✕</button>
+    </div>
+    <div class="campo">
+      <label for="c-mic">Microfone</label>
+      <select id="c-mic"><option value="">Nenhum microfone encontrado</option></select>
+    </div>
+    <div class="campo" id="c-saida-campo" hidden>
+      <label for="c-saida">Saída de som</label>
+      <select id="c-saida"></select>
+    </div>
+    <div class="campo">
+      <label for="c-qualidade">Qualidade ao transmitir sua tela</label>
+      <select id="c-qualidade">
+        <option value="854">Leve — melhor para link e computador fracos</option>
+        <option value="1280" selected>Padrão</option>
+        <option value="1920">Nítida — pesa mais na sua máquina</option>
+      </select>
+      <div class="config-dica">Vale para a próxima vez que você apresentar, e já se aplica se estiver apresentando agora.</div>
+    </div>
+  </div>
+</div>
 
 <script>
 (() => {
@@ -308,6 +378,9 @@ let ice = { iceServers: [{ urls: ['stun:stun.cloudflare.com:3478'] }], turn: fal
 let audioCtx = null;
 let ws = null, tentativas = 0, saindo = false;
 let batida = null, ultimoPong = 0;
+let saidaEscolhida = localStorage.getItem('vereda:saida') || '';
+let qualidadeTransmissao = Number(localStorage.getItem('vereda:qualidade')) || 1280;
+let vigiaCpu = null;
 
 // ---------------------------------------------------------------- nível de voz
 // Um laço só para todos os medidores: cada AnalyserNode extra custa quase nada,
@@ -360,7 +433,7 @@ const malha = (() => {
     // Papéis fixos e opostos nos dois lados, decididos pelo id: quando os dois
     // fazem oferta ao mesmo tempo, o "educado" cede e a colisão se resolve
     // sozinha, sem ninguém precisar esperar a vez.
-    const c = { pc, educado: eu.id < id, fazendoOferta: false, ignorando: false, telaIds: new Set() };
+    const c = { pc, educado: eu.id < id, fazendoOferta: false, ignorando: false, telaIds: new Set(), escalaPedida: 1 };
     cons.set(id, c);
 
     // Sem faixa nenhuma o onnegotiationneeded nunca dispara e quem entrou só
@@ -409,6 +482,15 @@ const malha = (() => {
     const c = abrir(id);
     const { pc } = c;
     try {
+      // Pedido de quem assiste para receber a tela mais leve (ou mais nítida
+      // de volta). Cada par tem sua própria conexão, então isso nunca afeta
+      // os outros espectadores.
+      if (dados.qualidadePedida) {
+        c.escalaPedida = Math.max(1, Number(dados.qualidadePedida) || 1);
+        ajustarBanda();
+        return;
+      }
+
       // Chega antes dos tracks, pelo mesmo WebSocket e portanto em ordem: é como
       // o outro lado distingue o áudio da tela do áudio do microfone.
       if (dados.telaId) { c.telaIds.add(dados.telaId); return; }
@@ -435,13 +517,17 @@ const malha = (() => {
   function ajustarBanda() {
     const n = Math.max(1, cons.size);
     const teto = Math.max(PISO_POR_PAR, Math.min(TETO_POR_PAR, ORCAMENTO_TELA / n));
-    for (const { pc } of cons.values()) {
-      for (const s of pc.getSenders()) {
+    for (const c of cons.values()) {
+      for (const s of c.pc.getSenders()) {
         if (s.track?.kind !== 'video') continue;
         const p = s.getParameters();
         if (!p.encodings?.length) p.encodings = [{}];
         p.encodings[0].maxBitrate = teto;
         p.encodings[0].maxFramerate = 12;
+        // Cada par pode pedir uma escala diferente da mesma transmissão —
+        // é por isso que a malha (uma conexão por pessoa) permite algo que um
+        // SFU sem simulcast não permitiria de graça.
+        p.encodings[0].scaleResolutionDownBy = c.escalaPedida || 1;
         // Sob aperto, prefira segurar os 12fps e perder nitidez a segurar a
         // nitidez e ir atrasando: um quadro borrado incomoda menos que um
         // vídeo que trava e recupera aos solavancos. É também o que evita que
@@ -453,14 +539,14 @@ const malha = (() => {
     return teto;
   }
 
-  async function iniciarTela() {
+  async function iniciarTela(larguraDesejada) {
     // 1080p mede quase o dobro dos pixels de 720p, e codificar cada quadro
     // extra rouba CPU/GPU de quem apresenta — de um jogo rodando ao mesmo
     // tempo, por exemplo — e é o que faz os quadros começarem a acumular no
     // codificador em vez de sair na hora. Para texto e slides, a diferença de
     // legibilidade é pequena; a diferença de fôlego da máquina não é.
     const s = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: { ideal: 12, max: 15 }, width: { max: 1280 } },
+      video: { frameRate: { ideal: 12, max: 15 }, width: { max: larguraDesejada || 1280 } },
       audio: true,
     });
     telaStream = s;
@@ -477,6 +563,21 @@ const malha = (() => {
     return ajustarBanda();
   }
 
+  // Mudar a qualidade com a apresentação já em andamento evita o incômodo de
+  // reabrir o seletor de tela do navegador. Nem todo navegador aceita
+  // reconfigurar uma faixa de tela já em uso; quando recusa, a escolha só
+  // vale a partir da próxima vez que a pessoa apresentar.
+  async function ajustarLarguraCaptura(larguraDesejada) {
+    const faixa = telaStream?.getVideoTracks()[0];
+    if (!faixa) return false;
+    try {
+      await faixa.applyConstraints({ width: { max: larguraDesejada } });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function pararTela() {
     if (!telaStream) return;
     const ids = new Set(telaStream.getTracks().map((t) => t.id));
@@ -487,8 +588,42 @@ const malha = (() => {
     telaStream = null;
   }
 
+  function trocarMic(track, stream) {
+    for (const c of cons.values()) {
+      const remetente = c.pc.getSenders().find((s) =>
+        s.track?.kind === 'audio' && !(telaStream && telaStream.getTracks().includes(s.track)));
+      // Quem entrou sem microfone não tem remetente de áudio nenhum — só o
+      // transceptor recvonly. Escolher um microfone depois vira addTrack, não
+      // replaceTrack.
+      if (remetente) remetente.replaceTrack(track).catch(() => {});
+      else c.pc.addTrack(track, stream);
+    }
+  }
+
+  function pedirQualidade(id, fator) {
+    const c = cons.get(id);
+    if (c) enviar(id, { qualidadePedida: fator });
+  }
+
+  // Só quem está apresentando tem algo a reportar aqui. 'none' cobre tanto
+  // "sem restrição" quanto "não estou apresentando".
+  async function limitacaoPropria() {
+    for (const c of cons.values()) {
+      const remetente = c.pc.getSenders().find((s) => s.track?.kind === 'video');
+      if (!remetente) continue;
+      const relatorio = await remetente.getStats();
+      let achado = null;
+      relatorio.forEach((r) => {
+        if (r.type === 'outbound-rtp' && r.kind === 'video') achado = r.qualityLimitationReason;
+      });
+      if (achado && achado !== 'none') return achado;
+    }
+    return 'none';
+  }
+
   return {
     abrir, fechar, fecharTudo, receber, iniciarTela, pararTela, ajustarBanda,
+    ajustarLarguraCaptura, trocarMic, pedirQualidade, limitacaoPropria,
     ligar(h) { aoAudio = h.aoAudio; aoTela = h.aoTela; aoRede = h.aoRede; },
     get tamanho() { return cons.size; },
   };
@@ -675,12 +810,15 @@ function palco() {
     telaOculta = false;
   }
 
+  const seletorQualidade = $('#b-qualidade-vista');
+
   if (!fluxo || telaOculta) {
     wrap.classList.remove('ativa');
     corpo.classList.remove('apresentando');
     $('#tela').srcObject = null;
     aviso.hidden = !fluxo;
     if (fluxo) aviso.textContent = (quem.sou ? 'sua tela' : quem.nome) + ' · mostrar';
+    seletorQualidade.hidden = true;
     return;
   }
   aviso.hidden = true;
@@ -688,6 +826,11 @@ function palco() {
   $('#tela-legenda').textContent = quem.sou ? 'sua tela' : `tela de ${quem.nome}`;
   wrap.classList.add('ativa');
   corpo.classList.add('apresentando');
+
+  // Pedir qualidade só faz sentido para a tela de outra pessoa: a própria
+  // não passa pela rede, não tem o que ajustar.
+  seletorQualidade.hidden = quem.sou;
+  if (!quem.sou) seletorQualidade.dataset.paraId = quem.id;
 }
 
 function toca(stream) {
@@ -695,11 +838,137 @@ function toca(stream) {
   a.autoplay = true;
   a.playsInline = true;
   a.srcObject = stream;
+  if (saidaEscolhida && 'setSinkId' in a) a.setSinkId(saidaEscolhida).catch(() => {});
   $('#audios').append(a);
   // O navegador pode recusar o áudio automático mesmo depois do clique em
   // Entrar. Quando recusa, avisa em vez de ficar mudo em silêncio.
   a.play().catch(() => avisa('Toque em qualquer lugar da página para liberar o áudio.', true));
   return a;
+}
+
+// ---------------------------------------------------------------- dispositivos e qualidade
+
+async function listarDispositivos() {
+  try {
+    const disp = await navigator.mediaDevices.enumerateDevices();
+    return {
+      entradas: disp.filter((d) => d.kind === 'audioinput'),
+      saidas: disp.filter((d) => d.kind === 'audiooutput'),
+    };
+  } catch {
+    return { entradas: [], saidas: [] };
+  }
+}
+
+async function preencherConfig() {
+  const { entradas, saidas } = await listarDispositivos();
+
+  const mic = $('#c-mic');
+  mic.innerHTML = entradas.length
+    ? entradas.map((d, i) => `<option value="${d.deviceId}">${d.label || 'Microfone ' + (i + 1)}</option>`).join('')
+    : '<option value="">Nenhum microfone encontrado</option>';
+  const idAtual = micTrack?.getSettings().deviceId;
+  if (idAtual) mic.value = idAtual;
+
+  const campoSaida = $('#c-saida-campo');
+  // Firefox e Safari não implementam setSinkId; melhor esconder a opção do
+  // que oferecer um seletor que não faz nada.
+  if ('setSinkId' in HTMLMediaElement.prototype) {
+    campoSaida.hidden = false;
+    const sel = $('#c-saida');
+    sel.innerHTML = '<option value="">Padrão do sistema</option>' +
+      saidas.map((d, i) => `<option value="${d.deviceId}">${d.label || 'Saída ' + (i + 1)}</option>`).join('');
+    sel.value = saidaEscolhida;
+  } else {
+    campoSaida.hidden = true;
+  }
+
+  $('#c-qualidade').value = String(qualidadeTransmissao);
+}
+
+function abrirConfig() {
+  preencherConfig();
+  $('#config-veu').hidden = false;
+}
+function fecharConfig() { $('#config-veu').hidden = true; }
+
+$('#f-config').onclick = abrirConfig;
+$('#b-config').onclick = abrirConfig;
+$('#config-fechar').onclick = fecharConfig;
+$('#config-veu').addEventListener('click', (e) => { if (e.target.id === 'config-veu') fecharConfig(); });
+
+// Aparelho plugado ou removido em qualquer momento — vale atualizar a lista
+// se o painel estiver aberto.
+navigator.mediaDevices?.addEventListener?.('devicechange', () => {
+  if (!$('#config-veu').hidden) preencherConfig();
+});
+
+async function trocarMicrofone(deviceId) {
+  if (!deviceId || deviceId === micTrack?.getSettings().deviceId) return;
+  try {
+    const novoStream = await navigator.mediaDevices.getUserMedia({
+      audio: { deviceId: { exact: deviceId }, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      video: false,
+    });
+    const novaFaixa = novoStream.getAudioTracks()[0];
+    novaFaixa.enabled = !eu.mudo;
+
+    malha.trocarMic(novaFaixa, novoStream);
+
+    micTrack?.stop();
+    micStream = novoStream;
+    micTrack = novaFaixa;
+
+    // Reabilita o controle de mudo para quem tinha entrado sem microfone.
+    if ($('#b-mic').disabled) {
+      $('#b-mic').disabled = false;
+      eu.mudo = false;
+      manda({ t: 'state', muted: eu.mudo, sharing: eu.apresentando });
+      botaoMic();
+    }
+
+    const p = pares.get(eu.id);
+    if (p) {
+      esquecerNivel(eu.id);
+      escutarNivel(eu.id, micStream, (falando) => p.ficha.classList.toggle('falando', falando && !eu.mudo));
+    }
+  } catch (e) {
+    avisa('Não consegui trocar de microfone: ' + e.message);
+  }
+}
+
+$('#c-mic').onchange = (e) => trocarMicrofone(e.target.value);
+
+$('#c-saida').onchange = (e) => {
+  saidaEscolhida = e.target.value;
+  localStorage.setItem('vereda:saida', saidaEscolhida);
+  document.querySelectorAll('#audios audio').forEach((a) => {
+    if ('setSinkId' in a) a.setSinkId(saidaEscolhida).catch(() => {});
+  });
+};
+
+$('#c-qualidade').onchange = async (e) => {
+  qualidadeTransmissao = Number(e.target.value);
+  localStorage.setItem('vereda:qualidade', String(qualidadeTransmissao));
+  if (eu.apresentando) {
+    const aplicou = await malha.ajustarLarguraCaptura(qualidadeTransmissao);
+    avisa(aplicou
+      ? 'Qualidade da transmissão atualizada.'
+      : 'Seu navegador não deixa mudar a qualidade com a tela já aberta — vale a partir da próxima vez que você apresentar.');
+  }
+};
+
+// Vigia a própria transmissão: qualityLimitationReason === 'cpu' é o
+// navegador dizendo que o codificador está represado pela CPU. Não dá para
+// ver isso na máquina de outra pessoa — é por isso que o aviso mora na
+// própria tela de quem apresenta, não na de quem assiste.
+function vigiarCpu() {
+  clearInterval(vigiaCpu);
+  vigiaCpu = setInterval(async () => {
+    if (!eu.apresentando) { clearInterval(vigiaCpu); $('#i-qualidade-reduzida').hidden = true; return; }
+    const motivo = await malha.limitacaoPropria();
+    $('#i-qualidade-reduzida').hidden = motivo !== 'cpu';
+  }, 4000);
 }
 
 // ---------------------------------------------------------------- chat
@@ -790,7 +1059,7 @@ async function apresentar() {
   if (outro) return avisa(`${outro.nome} já está apresentando. Uma tela por vez.`);
 
   try {
-    const teto = await malha.iniciarTela();
+    const teto = await malha.iniciarTela(qualidadeTransmissao);
     eu.apresentando = true;
     const p = pares.get(eu.id);
     if (p) { p.apresentando = true; pinta(p); }
@@ -798,6 +1067,7 @@ async function apresentar() {
     telaStream.getVideoTracks()[0].addEventListener('ended', pararApresentar);
     botaoTela();
     palco();
+    vigiarCpu();
 
     // Em malha o vídeo sai uma vez por pessoa. Acima de quatro, quem apresenta
     // precisa saber quanto está subindo — é aqui que o link rural reclama.
@@ -818,10 +1088,16 @@ function pararApresentar() {
   manda({ t: 'state', muted: eu.mudo, sharing: false });
   botaoTela();
   palco();
+  clearInterval(vigiaCpu);
+  $('#i-qualidade-reduzida').hidden = true;
 }
 
 $('#b-ocultar').onclick = () => { telaOculta = true; palco(); };
 $('#i-apresentando').onclick = () => { telaOculta = false; palco(); };
+$('#b-qualidade-vista').onchange = (e) => {
+  const id = e.target.dataset.paraId;
+  if (id) malha.pedirQualidade(id, Number(e.target.value));
+};
 
 $('#b-chat').onclick = () => {
   const aberto = $('#corpo').classList.toggle('com-chat');
