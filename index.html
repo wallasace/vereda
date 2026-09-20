@@ -354,6 +354,11 @@ details.avancado > div { margin-top: 12px; }
     <div class="campo" id="c-saida-campo" hidden>
       <label for="c-saida">Saída de som</label>
       <select id="c-saida"></select>
+      <div class="config-dica" id="c-saida-dica" hidden>
+        Seu navegador não lista os dispositivos de saída — comum em modo de
+        privacidade mais restrito (Brave, por exemplo). Sem a lista, não há
+        como trocar por aqui.
+      </div>
     </div>
     <div class="campo">
       <label for="c-qualidade">Nitidez ao transmitir sua tela</label>
@@ -966,6 +971,11 @@ async function preencherConfig() {
     sel.innerHTML = '<option value="">Padrão do sistema</option>' +
       saidas.map((d, i) => `<option value="${d.deviceId}">${d.label || 'Saída ' + (i + 1)}</option>`).join('');
     sel.value = saidaEscolhida;
+    // Navegador com proteção contra rastreamento mais agressiva (Brave, por
+    // exemplo) pode recusar listar os dispositivos de saída de propósito.
+    // Sem alternativa na lista, escolher qualquer coisa não muda nada — e
+    // sem este aviso, isso parece o seletor quebrado.
+    $('#c-saida-dica').hidden = saidas.length > 0;
   } else {
     campoSaida.hidden = true;
   }
@@ -1027,12 +1037,17 @@ async function trocarMicrofone(deviceId) {
 
 $('#c-mic').onchange = (e) => trocarMicrofone(e.target.value);
 
-$('#c-saida').onchange = (e) => {
+$('#c-saida').onchange = async (e) => {
   saidaEscolhida = e.target.value;
   localStorage.setItem('vereda:saida', saidaEscolhida);
-  document.querySelectorAll('#audios audio').forEach((a) => {
-    if ('setSinkId' in a) a.setSinkId(saidaEscolhida).catch(() => {});
-  });
+  const audios = [...document.querySelectorAll('#audios audio')].filter((a) => 'setSinkId' in a);
+  const resultados = await Promise.allSettled(audios.map((a) => a.setSinkId(saidaEscolhida)));
+  // Sem isto, um setSinkId recusado pelo navegador ficava em silêncio — a
+  // troca parecia não ter feito nada, e não havia como saber se o problema
+  // era o app ou uma restrição do navegador.
+  if (audios.length && resultados.every((r) => r.status === 'rejected')) {
+    avisa('Seu navegador recusou trocar a saída de som. Alguns modos de privacidade mais restritos bloqueiam isso.');
+  }
 };
 
 $('#c-qualidade').onchange = async (e) => {
