@@ -1390,39 +1390,7 @@ function poePar(p) {
 
   f.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    if (par.sou) {
-      abrirMenuContexto(e.clientX, e.clientY, [
-        { tipo: 'label', texto: par.nome, sub: 'Você' },
-        { tipo: 'separador' },
-        { tipo: 'item', texto: eu.mudo ? 'Ativar microfone' : 'Desativar microfone',
-          icone: eu.mudo ? ICONE_MUDO : ICONE_MIC_ON, onClick: () => $('#b-mic').click() },
-      ]);
-      return;
-    }
-    abrirMenuContexto(e.clientX, e.clientY, [
-      { tipo: 'label', texto: par.nome, sub: par.admin ? 'Admin da sala' : undefined },
-      { tipo: 'separador' },
-      { tipo: 'item', texto: 'Mutar só para mim', icone: ICONES_VOLUME[1],
-        marcado: par.volumeIndice === 2,
-        onClick: () => { par.volumeIndice = par.volumeIndice === 2 ? 0 : 2; aplicarVolumeLocal(par); } },
-      ...NIVEIS_VOLUME.map((v, i) => ({
-        tipo: 'item', texto: 'Volume local: ' + (i === 0 ? 'Nítido' : i === 1 ? 'Baixo' : 'Mudo'),
-        marcado: par.volumeIndice === i,
-        onClick: () => { par.volumeIndice = i; aplicarVolumeLocal(par); },
-      })),
-      { tipo: 'separador' },
-      { tipo: 'item', texto: `Mensagem com @${par.nome}`, icone: ICONE_MENSAGEM,
-        onClick: () => { iniciarMencao(par.nome); } },
-      ...(eu.admin ? [
-        { tipo: 'separador' },
-        { tipo: 'item', texto: `Expulsar ${par.nome}`, icone: ICONE_EXPULSAR, perigo: true,
-          onClick: () => {
-            if (confirm(`Expulsar ${par.nome} da sala? A pessoa pode voltar a entrar pelo mesmo link.`)) {
-              manda({ t: 'kick', id: par.id });
-            }
-          } },
-      ] : []),
-    ]);
+    abrirMenuContexto(e.clientX, e.clientY, blocosMenuParticipante(par));
   });
 
   $('#grade').append(f);
@@ -1483,6 +1451,51 @@ function aplicarVolumeLocal(par) {
     par.botaoVolume.className = 'volume-local ' + CLASSES_VOLUME[par.volumeIndice];
   }
 }
+
+// Blocos do menu de contexto de uma pessoa — usado tanto na ficha da grade
+// quanto na tela grande de quem está apresentando (aplicarVolumeLocal já
+// mexe em par.telaAudio, então "mutar" aqui também abaixa o som que vem
+// junto da transmissão, não só o microfone).
+function blocosMenuParticipante(par) {
+  if (par.sou) {
+    return [
+      { tipo: 'label', texto: par.nome, sub: 'Você' },
+      { tipo: 'separador' },
+      { tipo: 'item', texto: eu.mudo ? 'Ativar microfone' : 'Desativar microfone',
+        icone: eu.mudo ? ICONE_MUDO : ICONE_MIC_ON, onClick: () => $('#b-mic').click() },
+    ];
+  }
+  return [
+    { tipo: 'label', texto: par.nome, sub: par.admin ? 'Admin da sala' : undefined },
+    { tipo: 'separador' },
+    { tipo: 'item', texto: 'Mutar só para mim', icone: ICONES_VOLUME[1],
+      marcado: par.volumeIndice === 2,
+      onClick: () => { par.volumeIndice = par.volumeIndice === 2 ? 0 : 2; aplicarVolumeLocal(par); } },
+    ...NIVEIS_VOLUME.map((v, i) => ({
+      tipo: 'item', texto: 'Volume local: ' + (i === 0 ? 'Nítido' : i === 1 ? 'Baixo' : 'Mudo'),
+      marcado: par.volumeIndice === i,
+      onClick: () => { par.volumeIndice = i; aplicarVolumeLocal(par); },
+    })),
+    { tipo: 'separador' },
+    { tipo: 'item', texto: `Mensagem com @${par.nome}`, icone: ICONE_MENSAGEM,
+      onClick: () => { iniciarMencao(par.nome); } },
+    ...(eu.admin ? [
+      { tipo: 'separador' },
+      { tipo: 'item', texto: `Expulsar ${par.nome}`, icone: ICONE_EXPULSAR, perigo: true,
+        onClick: () => {
+          if (confirm(`Expulsar ${par.nome} da sala? A pessoa pode voltar a entrar pelo mesmo link.`)) {
+            manda({ t: 'kick', id: par.id });
+          }
+        } },
+    ] : []),
+  ];
+}
+
+$('#tela-wrap').addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  const quem = [...pares.values()].find((p) => p.apresentando);
+  if (quem) abrirMenuContexto(e.clientX, e.clientY, blocosMenuParticipante(quem));
+});
 
 function rede(id, estado) {
   const p = pares.get(id);
