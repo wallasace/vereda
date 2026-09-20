@@ -139,6 +139,7 @@ details.avancado > div { margin-top: 12px; }
 .selo svg { width: 15px; height: 15px; }
 .selo .mudo { color: var(--red); }
 .selo .partilha { color: var(--green); }
+.selo .admin { color: var(--amber); }
 .volume-local {
   position: absolute; bottom: 8px; right: 8px; width: 22px; height: 22px;
   border-radius: 50%; border: 1px solid var(--line); background: var(--panel-2);
@@ -150,6 +151,15 @@ details.avancado > div { margin-top: 12px; }
 .volume-local svg { width: 13px; height: 13px; }
 .corpo.apresentando .volume-local { width: 18px; height: 18px; bottom: 4px; right: 4px; }
 .corpo.apresentando .volume-local svg { width: 10px; height: 10px; }
+.expulsar {
+  position: absolute; bottom: 8px; left: 8px; width: 22px; height: 22px;
+  border-radius: 50%; border: 1px solid var(--line); background: var(--panel-2);
+  color: var(--red); display: grid; place-items: center; cursor: pointer;
+}
+.expulsar:hover { background: var(--red); color: #fff; border-color: var(--red); }
+.expulsar svg { width: 13px; height: 13px; }
+.corpo.apresentando .expulsar { width: 18px; height: 18px; bottom: 4px; left: 4px; }
+.corpo.apresentando .expulsar svg { width: 10px; height: 10px; }
 .ficha .estado { position: absolute; top: 8px; left: 8px; width: 7px; height: 7px; border-radius: 50%; }
 .estado.conectando { background: var(--amber); }
 .estado.pronto { background: var(--green); }
@@ -255,6 +265,14 @@ details.avancado > div { margin-top: 12px; }
       </div>
     </details>
 
+    <details class="avancado">
+      <summary>Senha de admin (opcional)</summary>
+      <div>
+        <input type="password" id="f-senha" placeholder="Deixe em branco para entrar sem ser admin" autocomplete="off">
+        <div class="dica">A primeira pessoa a digitar uma senha a define para a sala. Quem digitar a mesma depois também vira admin — dá para dividir com um co-anfitrião. Ninguém mais precisa dela para entrar.</div>
+      </div>
+    </details>
+
     <div class="campo">
       <label>Microfone</label>
       <div class="medidor"><i id="f-nivel"></i></div>
@@ -340,6 +358,14 @@ details.avancado > div { margin-top: 12px; }
 
 <div id="audios" style="position:absolute;width:0;height:0;overflow:hidden"></div>
 
+<!-- ---------------- expulso ---------------- -->
+<div class="veu" id="expulso-veu" hidden>
+  <div class="config-cartao" style="text-align:center">
+    <p style="margin:0 0 16px;font-size:15px">Você foi removido desta sala pelo administrador.</p>
+    <button class="botao" id="expulso-voltar" style="width:auto;padding:10px 20px">Voltar ao início</button>
+  </div>
+</div>
+
 <!-- ---------------- configurações ---------------- -->
 <div class="veu" id="config-veu" hidden>
   <div class="config-cartao">
@@ -401,7 +427,7 @@ const limpaSala = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''
 
 // ---------------------------------------------------------------- estado
 
-const eu = { id: null, nome: '', mudo: false, apresentando: false };
+const eu = { id: null, nome: '', mudo: false, apresentando: false, admin: false };
 const pares = new Map();   // id -> { id, nome, mudo, apresentando, ficha, audio, tela }
 let servidor = '', sala = '';
 let micStream = null, micTrack = null, telaStream = null;
@@ -689,7 +715,8 @@ function manda(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
 
 function conectar() {
   const base = servidor.replace(/\/+$/, '').replace(/^http/, 'ws');
-  ws = new WebSocket(`${base}/room/${sala}?name=${encodeURIComponent(eu.nome)}`);
+  const senha = $('#f-senha').value ? `&senha=${encodeURIComponent($('#f-senha').value)}` : '';
+  ws = new WebSocket(`${base}/room/${sala}?name=${encodeURIComponent(eu.nome)}${senha}`);
 
   ws.onopen = () => {
     tentativas = 0;
@@ -711,8 +738,18 @@ function conectar() {
   };
   ws.onerror = () => {};
 
-  ws.onclose = () => {
+  ws.onclose = (evento) => {
     clearInterval(batida);
+    // 4001 é o código que o Worker usa só para expulsão — nunca acontece por
+    // acaso, então não tenta reconectar: reconectar devolveria a mesma pessoa
+    // para a mesma sala da qual acabou de ser tirada.
+    if (evento.code === 4001) {
+      saindo = true;
+      malha.fecharTudo();
+      micStream?.getTracks().forEach((t) => t.stop());
+      mostrarExpulso();
+      return;
+    }
     if (saindo) return;
     // A sessão inteira é refeita na volta: o servidor dá um id novo a cada
     // conexão, e os pares antigos apontam para um id que não existe mais.
@@ -730,20 +767,22 @@ function trata(m) {
   switch (m.t) {
     case 'welcome':
       eu.id = m.id;
-      poePar({ ...eu, sou: true });
+      eu.admin = !!m.admin;
+      poePar({ ...eu, sou: true, admin: eu.admin });
       m.peers.forEach((p) => { poePar(p); malha.abrir(p.id); });
       manda({ t: 'state', muted: eu.mudo, sharing: eu.apresentando });
+      if (eu.admin) sistema('Você é admin desta sala.');
       break;
 
     case 'join':
       poePar(m);
       malha.abrir(m.id);
-      sistema(`${m.name} entrou`);
+      sistema(`${m.name} entrou` + (m.admin ? ' (admin)' : ''));
       break;
 
     case 'leave': {
       const p = pares.get(m.id);
-      if (p) sistema(`${p.nome} saiu`);
+      if (p) sistema(m.expulso ? `${p.nome} foi removido pelo admin` : `${p.nome} saiu`);
       malha.fechar(m.id);
       tiraPar(m.id);
       palco();
@@ -791,7 +830,7 @@ function poePar(p) {
   const par = {
     id, nome: p.nome || p.name || 'alguém',
     mudo: !!p.mudo || !!p.muted, apresentando: !!p.apresentando || !!p.sharing,
-    sou: !!p.sou, tela: null, audio: null, telaAudio: null,
+    admin: !!p.admin, sou: !!p.sou, tela: null, audio: null, telaAudio: null,
   };
 
   const f = cria('div', 'ficha');
@@ -817,6 +856,19 @@ function poePar(p) {
     f.append(botaoVolume);
     par.botaoVolume = botaoVolume;
     aplicarVolumeLocal(par);
+
+    if (eu.admin) {
+      const botaoExpulsar = cria('button', 'expulsar');
+      botaoExpulsar.type = 'button';
+      botaoExpulsar.title = `Expulsar ${par.nome} da sala`;
+      botaoExpulsar.innerHTML = ICONE_EXPULSAR;
+      botaoExpulsar.onclick = () => {
+        if (confirm(`Expulsar ${par.nome} da sala? A pessoa pode voltar a entrar pelo mesmo link.`)) {
+          manda({ t: 'kick', id: par.id });
+        }
+      };
+      f.append(botaoExpulsar);
+    }
   }
 
   $('#grade').append(f);
@@ -855,10 +907,13 @@ const ICONES_VOLUME = [
 ];
 const CLASSES_VOLUME = ['', 'baixo', 'mudo-local'];
 
+const ICONE_ADMIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="admin" title="Admin"><path d="M3 18h18M4 18l-1-9 5 4 4-7 4 7 5-4-1 9"/></svg>';
+const ICONE_EXPULSAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.6 3-6 7-6s7 2.4 7 6"/><path d="M17 9l4 4M21 9l-4 4"/></svg>';
+
 function pinta(p) {
   if (!p) return;
   const selo = p.ficha.querySelector('.selo');
-  selo.innerHTML = (p.mudo ? ICONE_MUDO : '') + (p.apresentando ? ICONE_TELA : '');
+  selo.innerHTML = (p.admin ? ICONE_ADMIN : '') + (p.mudo ? ICONE_MUDO : '') + (p.apresentando ? ICONE_TELA : '');
   if (p.mudo) p.ficha.classList.remove('falando');
 }
 
@@ -989,6 +1044,12 @@ function abrirConfig() {
   $('#config-veu').hidden = false;
 }
 function fecharConfig() { $('#config-veu').hidden = true; }
+
+function mostrarExpulso() {
+  fecharConfig();
+  $('#expulso-veu').hidden = false;
+}
+$('#expulso-voltar').onclick = () => location.reload();
 
 $('#f-config').onclick = abrirConfig;
 $('#b-config').onclick = abrirConfig;

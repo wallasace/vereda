@@ -112,6 +112,16 @@ export class Room {
     // perdidos. Vêm do ambiente para dar para testar a expulsão sem esperar.
     this.silencioMaximo = Number(env.SILENCIO_MAXIMO || 70_000);
     this.intervaloRonda = Number(env.INTERVALO_RONDA || 30_000);
+
+    // A senha de admin da sala, se alguém já tiver definido uma. Guardada em
+    // texto simples de propósito: a ameaça que isto evita é "qualquer um na
+    // sala consegue expulsar os outros", não um invasor com acesso à conta
+    // Cloudflare — para essa segunda coisa, hash não mudaria nada, porque quem
+    // lê o storage já tem acesso a tudo.
+    this.senhaAdmin = null;
+    state.blockConcurrencyWhile(async () => {
+      this.senhaAdmin = (await state.storage.get('senhaAdmin')) || null;
+    });
   }
 
   async fetch(request) {
@@ -124,7 +134,22 @@ export class Room {
 
     const url = new URL(request.url);
     const name = (url.searchParams.get('name') || 'alguém').slice(0, 40);
+    const senha = url.searchParams.get('senha') || '';
     const id = crypto.randomUUID().slice(0, 8);
+
+    // Sem senha ainda na sala: quem chegar com uma a define e já entra como
+    // admin. Com senha já definida: só quem digitar a mesma vira admin — dá
+    // para dividir moderação, é só compartilhar a senha com um co-anfitrião.
+    let admin = false;
+    if (senha) {
+      if (!this.senhaAdmin) {
+        this.senhaAdmin = senha.slice(0, 100);
+        await this.state.storage.put('senhaAdmin', this.senhaAdmin);
+        admin = true;
+      } else if (senha === this.senhaAdmin) {
+        admin = true;
+      }
+    }
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
@@ -133,13 +158,13 @@ export class Room {
     // conexões, e o tempo ocioso não é cobrado. O estado de cada participante
     // viaja anexado ao próprio socket para sobreviver a esse sono.
     this.state.acceptWebSocket(server);
-    server.serializeAttachment({ id, name, muted: false, sharing: false, visto: Date.now() });
+    server.serializeAttachment({ id, name, muted: false, sharing: false, admin, visto: Date.now() });
     await this.agendarRonda();
 
     const peers = sockets.map((ws) => ws.deserializeAttachment()).filter(Boolean);
 
-    server.send(JSON.stringify({ t: 'welcome', id, name, peers, cap: this.cap }));
-    this.broadcast({ t: 'join', id, name, muted: false, sharing: false }, server);
+    server.send(JSON.stringify({ t: 'welcome', id, name, admin, temSenha: !!this.senhaAdmin, peers, cap: this.cap }));
+    this.broadcast({ t: 'join', id, name, muted: false, sharing: false, admin }, server);
 
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -201,6 +226,19 @@ export class Room {
 
         ws.serializeAttachment({ ...me, muted, sharing });
         this.broadcast({ t: 'state', id: me.id, muted, sharing });
+        break;
+      }
+
+      // O admin vem do próprio servidor (serializeAttachment na entrada), não
+      // do que o cliente alega — quem não é admin de verdade não consegue
+      // forjar isto mandando {admin:true} na mensagem.
+      case 'kick': {
+        if (!me.admin || msg.id === me.id) return;
+        const alvo = this.state.getWebSockets().find((s) => s.deserializeAttachment()?.id === msg.id);
+        if (!alvo) return;
+        const quemAlvo = alvo.deserializeAttachment();
+        try { alvo.close(4001, 'expulso pelo admin'); } catch {}
+        this.broadcast({ t: 'leave', id: quemAlvo.id, expulso: true });
         break;
       }
     }

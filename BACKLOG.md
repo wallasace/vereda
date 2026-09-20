@@ -3,15 +3,34 @@
 Coisas registradas para depois — nenhuma implementada ainda. Uma seção por
 item, com o pedido original e por que importa.
 
-## Moderação: um admin por sala
+## ~~Moderação: admin com poder de expulsar~~ — feito em 2026-09-20
 
-Quem cria a sala precisa de um jeito de se identificar como dona dela — hoje
-todo mundo tem o mesmo poder — e, a partir disso, poder expulsar alguém e ter
-controle total sobre a sala.
+Senha opcional na entrada. Quem primeiro digitar uma a define para a sala e
+já entra como admin; quem digitar a mesma depois também vira admin — dá para
+dividir moderação com um co-anfitrião. Sem senha, a sala continua exatamente
+como antes, sem ninguém admin.
 
-Implica autenticação, mesmo que leve (uma senha de sala, um token no link),
-e um comando de moderação no protocolo do Worker (`kick`, por exemplo), com
-o Durable Object aplicando a regra em vez de confiar no cliente.
+A checagem é 100% do lado do servidor: o Durable Object marca `admin: true`
+no momento da entrada e guarda isso anexado ao próprio WebSocket — o cliente
+nunca é a fonte da verdade. Verificado tentando um não-admin expulsar alguém
+via mensagem forjada: o servidor ignora, mesmo que a mensagem minta.
+
+Expulsar fecha o WebSocket do alvo com o código 4001, que o cliente trata à
+parte de uma queda de conexão normal: mostra "você foi removido" em tela
+cheia e não tenta reconectar (reconectar devolveria a pessoa para a mesma
+sala da qual acabou de sair). Verificado com o código chegando certo em
+produção, incluindo a demora real da rede (não aparece em 800ms; aparece
+dentro de uns 3s).
+
+**O que isto não cobre, para ser honesto sobre o limite:** não é um banimento
+de verdade. A sala continua sendo "quem tem o link, entra" — a pessoa
+expulsa pode simplesmente entrar de novo pelo mesmo link, com uma conexão
+nova e um id novo (não existe conta, não existe identidade estável entre
+conexões para banir). Impedir isso de verdade pediria outra coisa — trocar o
+link, ou uma lista de banidos por IP, que o Cloudflare também não facilita.
+Não foi pedido "controle total" no sentido de travar a sala para novas
+entradas — isso fica registrado como próximo passo natural, não como o que
+foi entregue agora.
 
 ## Painel de administração
 
@@ -82,3 +101,10 @@ depende do hardware dele. Continua em aberto: perguntar a ele se a pílula
 aparece na próxima vez que isso acontecer, e se a queda de nitidez automática
 (`degradationPreference: 'maintain-framerate'`, já em produção) foi suficiente
 para o jogo não travar.
+
+## Trancar a sala para novos entrantes
+
+Poder natural de admin que ficou de fora do kick por escopo: parar de aceitar
+gente nova sem precisar trocar o link. Barato de fazer — um campo a mais no
+Durable Object (`trancada: bool`), um comando `{t:'trancar'}` só para admin,
+e recusar `acceptWebSocket` com um erro claro quando estiver trancada.

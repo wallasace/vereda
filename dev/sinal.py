@@ -32,6 +32,7 @@ SILENCIO_MAXIMO = 70   # segundos sem sinal de vida até ser considerado fora
 INTERVALO_RONDA = 30
 
 salas = {}           # sala -> [conexão]
+senhas = {}           # sala -> senha de admin, se alguém já tiver definido uma
 trava = threading.Lock()
 
 
@@ -39,17 +40,17 @@ class Conexao:
     def __init__(self, sock, nome):
         self.sock, self.nome = sock, nome
         self.id = uuid.uuid4().hex[:8]
-        self.mudo = self.apresentando = False
+        self.mudo = self.apresentando = self.admin = False
         self.visto = time.time()
         self.envio = threading.Lock()
 
     def resumo(self):
-        return {"id": self.id, "name": self.nome, "muted": self.mudo, "sharing": self.apresentando}
+        return {"id": self.id, "name": self.nome, "muted": self.mudo,
+                "sharing": self.apresentando, "admin": self.admin}
 
-    def manda(self, obj):
-        dados = json.dumps(obj).encode()
-        cab = bytearray([0x81])
-        n = len(dados)
+    def _quadro(self, opcode, payload):
+        cab = bytearray([0x80 | opcode])
+        n = len(payload)
         if n < 126:
             cab.append(n)
         elif n < 65536:
@@ -58,9 +59,28 @@ class Conexao:
             cab.append(127); cab += struct.pack(">Q", n)
         with self.envio:
             try:
-                self.sock.sendall(bytes(cab) + dados)
+                self.sock.sendall(bytes(cab) + payload)
             except OSError:
                 pass
+
+    def manda(self, obj):
+        self._quadro(0x1, json.dumps(obj).encode())
+
+    def fechar(self, codigo=1000, motivo=""):
+        # Frame de fechamento de verdade, com código — sem isto o navegador do
+        # outro lado recebe um encerramento genérico (1006) em vez do código
+        # que diz por que foi desconectado, e o cliente não sabe diferenciar
+        # "expulso" de "a rede caiu".
+        self._quadro(0x8, struct.pack(">H", codigo) + motivo.encode("utf-8")[:123])
+        # Um FIN limpo (não um RST): fecha só o lado de escrita, e dá um
+        # instante para o quadro acima realmente sair pela rede antes de
+        # qualquer coisa atrapalhar. Sem isto, o navegador às vezes via só um
+        # encerramento abrupto (1006) e nunca chegava a ler o código 4001.
+        time.sleep(0.05)
+        try:
+            self.sock.shutdown(socket.SHUT_WR)
+        except OSError:
+            pass
 
 
 def difunde(sala, obj, menos=None):
@@ -185,10 +205,12 @@ class Alça(BaseHTTPRequestHandler):
         self.send_header("Sec-WebSocket-Accept", aceite)
         self.end_headers()
 
-        nome = "alguém"
+        nome, senha = "alguém", ""
         if "?" in self.path:
             from urllib.parse import parse_qs
-            nome = parse_qs(self.path.split("?", 1)[1]).get("name", ["alguém"])[0][:40]
+            qs = parse_qs(self.path.split("?", 1)[1])
+            nome = qs.get("name", ["alguém"])[0][:40]
+            senha = qs.get("senha", [""])[0]
 
         eu = Conexao(self.connection, nome)
         with trava:
@@ -199,7 +221,20 @@ class Alça(BaseHTTPRequestHandler):
             outros = [c.resumo() for c in fila]
             fila.append(eu)
 
-        eu.manda({"t": "welcome", "id": eu.id, "name": nome, "peers": outros, "cap": CAP})
+            # Sem senha ainda: quem chegar com uma a define e já entra como
+            # admin. Com senha já definida: só quem digitar a mesma vira
+            # admin — dá para dividir moderação com um co-anfitrião.
+            senha_atual = senhas.get(sala)
+            if senha:
+                if not senha_atual:
+                    senhas[sala] = senha[:100]
+                    eu.admin = True
+                elif senha == senha_atual:
+                    eu.admin = True
+            tem_senha = bool(senhas.get(sala))
+
+        eu.manda({"t": "welcome", "id": eu.id, "name": nome, "admin": eu.admin,
+                  "temSenha": tem_senha, "peers": outros, "cap": CAP})
         difunde(sala, {"t": "join", **eu.resumo()}, menos=eu)
         print(f"  + {nome} ({eu.id}) em '{sala}' — {len(outros)+1} na sala", flush=True)
 
@@ -217,6 +252,7 @@ class Alça(BaseHTTPRequestHandler):
                     salas[sala].remove(eu)
                 if not salas.get(sala):
                     salas.pop(sala, None)
+                    senhas.pop(sala, None)  # sala esvaziou; a senha de admin não serve mais
             difunde(sala, {"t": "leave", "id": eu.id})
             print(f"  - {nome} ({eu.id}) saiu de '{sala}'", flush=True)
 
@@ -282,6 +318,17 @@ class Alça(BaseHTTPRequestHandler):
             eu.mudo = bool(m.get("muted"))
             eu.apresentando = quer
             difunde(sala, {"t": "state", "id": eu.id, "muted": eu.mudo, "sharing": eu.apresentando})
+
+        elif t == "kick":
+            # O admin vem do que o SERVIDOR marcou na entrada, não do que a
+            # mensagem alega — mesma garantia do Worker.
+            if not eu.admin or m.get("id") == eu.id:
+                return
+            with trava:
+                alvo = next((c for c in salas.get(sala, []) if c.id == m.get("id")), None)
+            if alvo:
+                alvo.fechar(4001, "expulso pelo admin")
+                difunde(sala, {"t": "leave", "id": alvo.id, "expulso": True})
 
 
 def ronda():
