@@ -32,12 +32,32 @@ Não foi pedido "controle total" no sentido de travar a sala para novas
 entradas — isso fica registrado como próximo passo natural, não como o que
 foi entregue agora.
 
-## Painel de administração
+## ~~Painel de administração~~ — feito em 2026-09-20
 
-Visão de tráfego e desempenho do servidor de sinalização — quantas salas
-ativas, quantas pessoas, uso da cota gratuita da Cloudflare. Em aberto se
-fica embutido no próprio app ou é uma página separada; a régua é pesar o
-mais leve e prático de manter.
+Rota `/admin` no próprio Worker, protegida por token (`wrangler secret put
+ADMIN_TOKEN`), mostrando salas ativas agora, pessoas conectadas agora e
+entradas desde sempre. Documentado em `worker/README.md`.
+
+Decisão de escopo: não duplica requisições/dia, CPU ou uso de cota — isso o
+[painel da própria Cloudflare](https://dash.cloudflare.com) já mostra de
+graça, com mais precisão do que eu reproduziria contando por fora. Construir
+de novo o que já existe e é mais confiável não seria "leve" nem "eficiente".
+
+Arquitetura: Cloudflare não lista Durable Objects existentes (uma sala = um
+DO isolado, sem como enumerar todos), então um segundo DO (`Registro`, uma
+única instância chamada `'global'`) é quem soma. Cada `Room` avisa `Registro`
+ao ganhar o primeiro participante, ao receber cada entrada, e ao perder cada
+saída — o ponto de saída é único (`gone()`, chamado por todo caminho de
+desconexão: normal, expulsão, fantasma) para não contar a mesma saída duas
+vezes. Opcional por natureza: sem o binding `REGISTRO` configurado, `Room`
+segue funcionando igual, só sem alimentar um contador que ninguém está
+olhando.
+
+Verificado em produção com uma entrada e saída reais pelo app: painel foi de
+0/0/0 para 1/1/1 e voltou para 0/0 (mantendo o acumulado em 1). Localmente,
+onde o valor de partida carregava um resíduo de um teste anterior derrubado
+à força, as variações bateram exatas em cada entrada e saída — o que importa
+para confiar na lógica, já que o valor absoluto em produção nasce do zero.
 
 ## ~~Escolha de dispositivo de áudio~~ — feito em 2026-09-20
 

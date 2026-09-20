@@ -47,6 +47,14 @@ const json = (body, status, origem) =>
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // /admin é para você visitar direto pelo navegador, digitando o
+    // endereço — não é o app chamando via fetch(). Uma navegação direta não
+    // manda o mesmo Origin que uma chamada de dentro do app manda (às vezes
+    // não manda Origin nenhum), então esta rota tem seu próprio cadeado —
+    // um token, não a checagem de Origin que protege /ice e /room.
+    if (url.pathname === '/admin') return admin(request, url, env);
+
     const origem = request.headers.get('origin');
     const permitida = origemPermitida(origem, env);
 
@@ -71,6 +79,43 @@ export default {
     return json({ error: 'not_found' }, 404, origem);
   },
 };
+
+// Painel bem pequeno de propósito: quantas salas e pessoas agora, e quantas
+// entradas desde sempre. Para requisições/dia, CPU e o resto da cota, o
+// próprio painel da Cloudflare (Workers & Pages → vereda → Metrics) já
+// mostra tudo isso de graça, com mais precisão do que eu reproduziria aqui —
+// não faz sentido duplicar o que já existe e é mais confiável.
+async function admin(request, url, env) {
+  const token = url.searchParams.get('token') || (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
+  if (!env.ADMIN_TOKEN) return json({ error: 'admin_nao_configurado' }, 501, null);
+  if (token !== env.ADMIN_TOKEN) return json({ error: 'unauthorized' }, 401, null);
+  if (!env.REGISTRO) return json({ error: 'registro_nao_configurado' }, 501, null);
+
+  const id = env.REGISTRO.idFromName('global');
+  const resposta = await env.REGISTRO.get(id).fetch('http://registro/');
+  const dados = await resposta.json();
+
+  if (url.searchParams.get('formato') === 'json') return json(dados, 200, null);
+
+  const pagina = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vereda — painel</title>
+<style>
+  body{background:#101722;color:#e8eef7;font:15px/1.5 -apple-system,sans-serif;max-width:480px;margin:40px auto;padding:0 20px}
+  h1{font-size:20px}
+  .num{font-size:36px;font-weight:700;color:#7fb0ea}
+  .linha{display:flex;justify-content:space-between;align-items:baseline;padding:14px 0;border-bottom:1px solid #2a3648}
+  a{color:#7fb0ea}
+</style></head><body>
+<h1>Vereda — painel</h1>
+<div class="linha"><span>Salas ativas agora</span><span class="num">${dados.salasAtivas}</span></div>
+<div class="linha"><span>Pessoas conectadas agora</span><span class="num">${dados.pessoasAgora}</span></div>
+<div class="linha"><span>Entradas desde sempre</span><span class="num">${dados.entradasTotais}</span></div>
+<p style="color:#8494a9;font-size:13px;margin-top:24px">Requisições por dia, CPU e o resto da cota gratuita:
+<a href="https://dash.cloudflare.com" target="_blank">painel da Cloudflare</a> → Workers &amp; Pages → vereda → Metrics.</p>
+</body></html>`;
+  return new Response(pagina, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+}
 
 // STUN só descobre o seu endereço público; quando a operadora usa CGNAT — o
 // caso comum fora das capitais — isso não basta e a chamada precisa do TURN
@@ -157,9 +202,11 @@ export class Room {
     // Hibernação: o Durable Object pode dormir entre mensagens sem derrubar as
     // conexões, e o tempo ocioso não é cobrado. O estado de cada participante
     // viaja anexado ao próprio socket para sobreviver a esse sono.
+    const novaSala = sockets.length === 0;
     this.state.acceptWebSocket(server);
     server.serializeAttachment({ id, name, muted: false, sharing: false, admin, visto: Date.now() });
     await this.agendarRonda();
+    await this.reportar('entrou', { novaSala });
 
     const peers = sockets.map((ws) => ws.deserializeAttachment()).filter(Boolean);
 
@@ -167,6 +214,22 @@ export class Room {
     this.broadcast({ t: 'join', id, name, muted: false, sharing: false, admin }, server);
 
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  // O painel de tráfego é opcional — sem o binding REGISTRO configurado (a
+  // maioria das cópias deste projeto não vai ter), a sala funciona
+  // exatamente igual, só sem alimentar um contador que ninguém está olhando.
+  async reportar(tipo, extra) {
+    if (!this.env.REGISTRO) return;
+    try {
+      const id = this.env.REGISTRO.idFromName('global');
+      await this.env.REGISTRO.get(id).fetch('http://registro/evento', {
+        method: 'POST',
+        body: JSON.stringify({ tipo, ...extra }),
+      });
+    } catch {
+      // o painel é só um extra; uma falha aqui não pode derrubar a sala
+    }
   }
 
   async webSocketMessage(ws, raw) {
@@ -267,17 +330,23 @@ export class Room {
     await this.state.storage.setAlarm(Date.now() + this.intervaloRonda);
   }
 
-  webSocketClose(ws) {
-    this.gone(ws);
+  async webSocketClose(ws) {
+    await this.gone(ws);
   }
 
-  webSocketError(ws) {
-    this.gone(ws);
+  async webSocketError(ws) {
+    await this.gone(ws);
   }
 
-  gone(ws) {
+  async gone(ws) {
     const me = ws.deserializeAttachment();
-    if (me) this.broadcast({ t: 'leave', id: me.id }, ws);
+    if (!me) return;
+    this.broadcast({ t: 'leave', id: me.id }, ws);
+    // Único lugar que conta saídas: fechamento normal, expulsão e a ronda de
+    // fantasmas passam todos por aqui (fechar um socket sempre dispara isto),
+    // então contar em mais de um lugar contaria a mesma saída duas vezes.
+    const salaVazia = this.state.getWebSockets().every((s) => s === ws);
+    await this.reportar('saiu', { salaVazia });
   }
 
   broadcast(msg, except) {
@@ -290,5 +359,43 @@ export class Room {
         // socket já morto; o close handler limpa
       }
     }
+  }
+}
+
+// Um único Durable Object, sempre com o mesmo nome ('global'), guardando só
+// três números. Room chama /evento a cada entrada e saída; o painel em
+// admin() lê o snapshot atual. Sem lista de salas nem de pessoas — só
+// contagem, que é tudo que "leve, conveniente, prático e eficiente" pedia.
+export class Registro {
+  constructor(state) {
+    this.state = state;
+    this.dados = { salasAtivas: 0, pessoasAgora: 0, entradasTotais: 0 };
+    state.blockConcurrencyWhile(async () => {
+      this.dados = (await state.storage.get('dados')) || this.dados;
+    });
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+
+    if (request.method === 'POST' && url.pathname === '/evento') {
+      const { tipo, novaSala, salaVazia } = await request.json();
+
+      if (tipo === 'entrou') {
+        this.dados.pessoasAgora++;
+        this.dados.entradasTotais++;
+        if (novaSala) this.dados.salasAtivas++;
+      } else if (tipo === 'saiu') {
+        this.dados.pessoasAgora = Math.max(0, this.dados.pessoasAgora - 1);
+        if (salaVazia) this.dados.salasAtivas = Math.max(0, this.dados.salasAtivas - 1);
+      }
+
+      await this.state.storage.put('dados', this.dados);
+      return new Response('ok');
+    }
+
+    return new Response(JSON.stringify(this.dados), {
+      headers: { 'content-type': 'application/json' },
+    });
   }
 }

@@ -11,11 +11,23 @@ ROOM_CAP = "10"
 name = "ROOM"
 class_name = "Room"
 
+# Um único objeto ('global'), contando salas e pessoas para o painel em
+# /admin. Opcional por natureza: Room já checa `if (!this.env.REGISTRO)
+# return` antes de usar — tirar este binding não quebra as salas, só apaga o
+# painel.
+[[durable_objects.bindings]]
+name = "REGISTRO"
+class_name = "Registro"
+
 # new_sqlite_classes, e não new_classes: o plano gratuito de Durable Objects só
 # atende objetos com armazenamento SQLite.
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Registro"]
 
 [observability]
 enabled = true
