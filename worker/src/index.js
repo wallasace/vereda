@@ -31,6 +31,15 @@ function origemPermitida(origem, env) {
   return origensPermitidas(env).has(origem);
 }
 
+// Um código só, distribuído por quem administra a sala — não é conta nem
+// senha por pessoa, é um cadeado na porta de entrada. Sem SENHA_ACESSO
+// configurado, o gate fica desligado (quem clonar este projeto sem definir
+// nada continua com o comportamento de antes, sala aberta pra qualquer um).
+function acessoPermitido(url, env) {
+  if (!env.SENHA_ACESSO) return true;
+  return url.searchParams.get('acesso') === env.SENHA_ACESSO;
+}
+
 const corsHeaders = (origem) => ({
   'access-control-allow-origin': origem,
   'access-control-allow-methods': 'GET, POST, OPTIONS',
@@ -66,6 +75,8 @@ export default {
     }
 
     if (!permitida) return json({ error: 'origin_not_allowed' }, 403, null);
+
+    if (!acessoPermitido(url, env)) return json({ error: 'acesso_negado' }, 401, origem);
 
     // O cliente pede os servidores ICE aqui em vez de trazê-los embutidos:
     // as credenciais do TURN são temporárias e não podem morar no HTML.

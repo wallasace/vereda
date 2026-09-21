@@ -18,22 +18,35 @@ credenciais reais da Cloudflare, do mesmo jeito que o Worker faz:
 
     TURN_KEY_ID=... TURN_KEY_API_TOKEN=... python3 dev/sinal.py --tls
 
+Se SENHA_ACESSO estiver no ambiente, /ice e /room/* passam a exigir
+?acesso=A_MESMA_SENHA na URL, espelhando o gate do Worker:
+
+    SENHA_ACESSO=teste123 python3 dev/sinal.py
+
 Não use isto em produção: sem limite de abuso, sem autenticação, e fala
 WebSocket no mínimo necessário para funcionar num navegador moderno.
 """
 
 import base64, hashlib, json, os, re, socket, ssl, struct, subprocess, sys, threading, time, uuid, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 CAP = 10
 SILENCIO_MAXIMO = 70   # segundos sem sinal de vida até ser considerado fora
 INTERVALO_RONDA = 30
+SENHA_ACESSO = os.environ.get("SENHA_ACESSO")  # mesmo gate do Worker; sem isto no ambiente, sala aberta pra qualquer um
 
 salas = {}           # sala -> [conexão]
 senhas = {}           # sala -> senha de admin, se alguém já tiver definido uma
 trava = threading.Lock()
+
+
+def acesso_ok(qs):
+    if not SENHA_ACESSO:
+        return True
+    return qs.get("acesso", [""])[0] == SENHA_ACESSO
 
 
 class Conexao:
@@ -155,8 +168,11 @@ class Alça(BaseHTTPRequestHandler):
 
     def do_GET(self):
         caminho = self.path.split("?")[0]
+        qs = parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
 
         if caminho == "/ice":
+            if not acesso_ok(qs):
+                return self.json({"error": "acesso_negado"}, 401)
             return self.json(ice())
 
         if caminho.startswith("/room/"):
@@ -198,6 +214,10 @@ class Alça(BaseHTTPRequestHandler):
         if self.headers.get("Upgrade", "").lower() != "websocket" or not chave:
             return self.json({"error": "expected_websocket"}, 426)
 
+        qs = parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
+        if not acesso_ok(qs):
+            return self.json({"error": "acesso_negado"}, 401)
+
         aceite = base64.b64encode(hashlib.sha1((chave + GUID).encode()).digest()).decode()
         self.send_response(101)
         self.send_header("Upgrade", "websocket")
@@ -205,12 +225,8 @@ class Alça(BaseHTTPRequestHandler):
         self.send_header("Sec-WebSocket-Accept", aceite)
         self.end_headers()
 
-        nome, senha = "alguém", ""
-        if "?" in self.path:
-            from urllib.parse import parse_qs
-            qs = parse_qs(self.path.split("?", 1)[1])
-            nome = qs.get("name", ["alguém"])[0][:40]
-            senha = qs.get("senha", [""])[0]
+        nome = qs.get("name", ["alguém"])[0][:40]
+        senha = qs.get("senha", [""])[0]
 
         eu = Conexao(self.connection, nome)
         with trava:

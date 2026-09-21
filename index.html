@@ -474,7 +474,20 @@ details.avancado > div { margin-top: 10px; }
   </section>
 
   <section class="setup-panel">
-    <div class="cartao">
+    <div class="cartao" id="acesso-cartao">
+      <div class="campo">
+        <label for="f-acesso">Código de acesso</label>
+        <input type="password" id="f-acesso" maxlength="100" placeholder="Peça o código a quem te convidou" autocomplete="off">
+        <div class="dica">Sem o código, só dá para ver esta tela.</div>
+      </div>
+      <button class="botao" id="f-acesso-entrar">
+        Continuar
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </button>
+      <div class="erro" id="f-acesso-erro"></div>
+    </div>
+
+    <div class="cartao" id="form-cartao" hidden>
       <div class="campo">
         <label for="f-nome">Seu nome</label>
         <input type="text" id="f-nome" maxlength="40" placeholder="Como aparecer para os outros" autocomplete="nickname">
@@ -787,6 +800,7 @@ const limpaSala = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''
 const eu = { id: null, nome: '', mudo: false, apresentando: false, admin: false };
 const pares = new Map();   // id -> { id, nome, mudo, apresentando, ficha, audio, tela }
 let servidor = '', sala = '';
+let codigoAcesso = localStorage.getItem('vereda:codigo-acesso') || '';
 let micStream = null, micTrack = null, telaStream = null;
 let ice = { iceServers: [{ urls: ['stun:stun.cloudflare.com:3478'] }], turn: false };
 let audioCtx = null;
@@ -1227,7 +1241,8 @@ function manda(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
 function conectar() {
   const base = servidor.replace(/\/+$/, '').replace(/^http/, 'ws');
   const senha = $('#f-senha').value ? `&senha=${encodeURIComponent($('#f-senha').value)}` : '';
-  ws = new WebSocket(`${base}/room/${sala}?name=${encodeURIComponent(eu.nome)}${senha}`);
+  const acesso = codigoAcesso ? `&acesso=${encodeURIComponent(codigoAcesso)}` : '';
+  ws = new WebSocket(`${base}/room/${sala}?name=${encodeURIComponent(eu.nome)}${senha}${acesso}`);
 
   ws.onopen = () => {
     tentativas = 0;
@@ -2373,14 +2388,23 @@ async function entrar() {
   $('#f-entrar').textContent = 'Conectando…';
 
   // O /ice serve de duas coisas: traz as credenciais do TURN e prova que o
-  // servidor responde, antes de abrir o WebSocket e ficar no escuro.
+  // servidor responde, antes de abrir o WebSocket e ficar no escuro. Se o
+  // código de acesso mudou de válido pra inválido nesse meio-tempo (revogado
+  // pelo dono da sala), é aqui que isso aparece, antes de tentar a sala.
   try {
-    const r = await fetch(servidor + '/ice', { cache: 'no-store' });
+    const r = await fetch(servidor + '/ice?acesso=' + encodeURIComponent(codigoAcesso), { cache: 'no-store' });
+    if (r.status === 401) throw { acessoNegado: true };
     if (!r.ok) throw new Error('HTTP ' + r.status);
     ice = await r.json();
   } catch (e) {
     $('#f-entrar').disabled = false;
     $('#f-entrar').textContent = 'Entrar';
+    if (e && e.acessoNegado) {
+      codigoAcesso = '';
+      localStorage.removeItem('vereda:codigo-acesso');
+      mostrarGateAcesso();
+      return erro('');
+    }
     return erro('Não alcancei o servidor de sinalização. Confira o endereço.');
   }
 
@@ -2418,6 +2442,52 @@ async function entrar() {
   conectar();
 }
 
+// ---------------------------------------------------------------- código de acesso
+// Um cadeado antes de qualquer sala: quem não tiver o código só vê esta
+// tela. A checagem de verdade é o Worker recusando /ice e /room sem
+// ?acesso= correto — isto aqui só existe pra dar um retorno claro em vez de
+// deixar a pessoa tentar entrar numa sala e ver tudo falhar sem explicação.
+
+async function verificarAcesso(codigo) {
+  const alvo = ($('#f-servidor').value.trim() || SIGNAL_DEFAULT).replace(/\/+$/, '');
+  if (!alvo) return false;
+  try {
+    const r = await fetch(alvo + '/ice?acesso=' + encodeURIComponent(codigo), { cache: 'no-store' });
+    return r.ok;
+  } catch { return false; }
+}
+
+function mostrarFormulario() {
+  $('#acesso-cartao').hidden = true;
+  $('#form-cartao').hidden = false;
+  ($('#f-nome').value ? $('#f-sala') : $('#f-nome')).focus();
+}
+
+function mostrarGateAcesso() {
+  $('#form-cartao').hidden = true;
+  $('#acesso-cartao').hidden = false;
+  $('#f-acesso').value = '';
+  $('#f-acesso').focus();
+}
+
+async function tentarAcesso() {
+  const codigo = $('#f-acesso').value.trim();
+  if (!codigo) { $('#f-acesso-erro').textContent = 'Digite o código de acesso.'; return; }
+  $('#f-acesso-entrar').disabled = true;
+  $('#f-acesso-entrar').textContent = 'Verificando…';
+  $('#f-acesso-erro').textContent = '';
+  const ok = await verificarAcesso(codigo);
+  $('#f-acesso-entrar').disabled = false;
+  $('#f-acesso-entrar').textContent = 'Continuar';
+  if (!ok) { $('#f-acesso-erro').textContent = 'Código incorreto.'; return; }
+  codigoAcesso = codigo;
+  localStorage.setItem('vereda:codigo-acesso', codigo);
+  mostrarFormulario();
+}
+
+$('#f-acesso-entrar').onclick = tentarAcesso;
+$('#f-acesso').addEventListener('keydown', (e) => { if (e.key === 'Enter') tentarAcesso(); });
+
 $('#f-entrar').onclick = entrar;
 for (const id of ['#f-nome', '#f-sala', '#f-servidor']) {
   $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') entrar(); });
@@ -2446,7 +2516,22 @@ $('#f-sala').value = limpaSala(decodeURIComponent(location.hash.slice(1)));
 if (SIGNAL_DEFAULT && servidorInicial === SIGNAL_DEFAULT) {
   document.querySelector('details.avancado').style.display = 'none';
 }
-($('#f-nome').value ? $('#f-sala') : $('#f-nome')).focus();
+
+(async () => {
+  // Um código salvo de uma visita anterior só libera o formulário depois de
+  // confirmado de novo com o servidor — revogar o código no Worker precisa
+  // derrubar quem já tinha acesso salvo, não só barrar código novo.
+  if (codigoAcesso) {
+    if (await verificarAcesso(codigoAcesso)) return mostrarFormulario();
+    codigoAcesso = '';
+    localStorage.removeItem('vereda:codigo-acesso');
+  }
+  // Sem código nenhum: tenta um pedido vazio pra descobrir se este servidor
+  // exige código. Uma cópia deste projeto sem SENHA_ACESSO configurada não
+  // deve mostrar cadeado nenhum — o gate só existe quando o dono ligou ele.
+  if (await verificarAcesso('')) return mostrarFormulario();
+  $('#f-acesso').focus();
+})();
 prepararMic();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
