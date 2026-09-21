@@ -33,6 +33,7 @@ o atravessam.
 index.html        o app inteiro — interface, WebRTC, chat
 worker/           sinalização: um Worker da Cloudflare, um Durable Object por sala
 dev/sinal.py      o mesmo protocolo em Python, para desenvolver sem publicar nada
+dev/testes.py     testes de fumaça do protocolo, contra o dev/sinal.py
 sw.js             cache da casca, para abrir rápido e sobreviver a link ruim
 ```
 
@@ -108,6 +109,19 @@ TURN_KEY_ID=... TURN_KEY_API_TOKEN=... python3 dev/sinal.py --tls
 ```
 
 A linha `TURN:` no início do terminal diz se pegou.
+
+### Testes de fumaça
+
+```bash
+python3 dev/testes.py
+```
+
+Sobe uma instância própria do `dev/sinal.py` numa porta separada (não mexe
+na que você já tem aberta), fala o protocolo bruto de WebSocket com ela e
+confere entrada/saída, chat (texto, resposta, imagem), admin de sala — com
+o bloqueio de tentativas erradas — e o gate de código de acesso. Não cobre
+WebRTC em si (voz, tela): isso nunca passa pelo servidor de sinalização,
+só combina a ligação direta entre os navegadores.
 
 ## Publicar
 
