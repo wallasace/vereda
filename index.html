@@ -2266,11 +2266,20 @@ function comprimirImagem(file) {
         const tela = document.createElement('canvas');
         tela.width = w; tela.height = h;
         tela.getContext('2d').drawImage(img, 0, 0, w, h);
+        // WebP comprime bem melhor que JPEG no mesmo tamanho de arquivo —
+        // cabe mais qualidade dentro do mesmo teto de bytes da mensagem, o
+        // que sobra tanto pra quem manda (imagem mais nítida) quanto pra
+        // quem recebe (broadcast menor pra cada participante da sala). Em
+        // navegador sem suporte, toDataURL('image/webp') simplesmente
+        // devolve PNG — bem maior — então detecta isso e cai pra JPEG em
+        // vez de arriscar rejeitar a imagem à toa por estourar o teto.
+        const suportaWebp = tela.toDataURL('image/webp', 0.5).startsWith('data:image/webp');
+        const tipo = suportaWebp ? 'image/webp' : 'image/jpeg';
         let qualidade = 0.72;
-        let dataUrl = tela.toDataURL('image/jpeg', qualidade);
+        let dataUrl = tela.toDataURL(tipo, qualidade);
         while (dataUrl.length > IMAGEM_TAMANHO_MAX && qualidade > 0.35) {
           qualidade -= 0.12;
-          dataUrl = tela.toDataURL('image/jpeg', qualidade);
+          dataUrl = tela.toDataURL(tipo, qualidade);
         }
         if (dataUrl.length > IMAGEM_TAMANHO_MAX) { reject(new Error('imagem grande demais')); return; }
         resolve(dataUrl);
