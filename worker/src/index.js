@@ -320,7 +320,18 @@ export class Room {
     }
 
     const sockets = this.state.getWebSockets();
-    if (sockets.length >= this.cap) return json({ error: 'room_full', cap: this.cap }, 503);
+    if (sockets.length >= this.cap) {
+      // Rejeitar o upgrade (um 503 comum) deixa o navegador sem jeito de ler
+      // o motivo — WebSocket só enxerga "falhou". Aceitando e mandando uma
+      // mensagem de verdade antes de fechar, o cliente sabe exatamente por
+      // quê, em vez de tentar de novo pra sempre sem explicação nenhuma.
+      const pair = new WebSocketPair();
+      const [client, server] = Object.values(pair);
+      server.accept();
+      server.send(JSON.stringify({ t: 'error', code: 'room_full' }));
+      server.close(1000, 'sala cheia');
+      return new Response(null, { status: 101, webSocket: client });
+    }
 
     const nomeDaUrl = url.pathname.match(/^\/room\/([a-z0-9-]{1,64})$/i)?.[1]?.toLowerCase();
     if (nomeDaUrl && nomeDaUrl !== this.salaNome) {

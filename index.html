@@ -805,6 +805,7 @@ let micStream = null, micTrack = null, telaStream = null;
 let ice = { iceServers: [{ urls: ['stun:stun.cloudflare.com:3478'] }], turn: false };
 let audioCtx = null;
 let ws = null, tentativas = 0, saindo = false;
+let motivoFalhaConexao = null; // preenchido por 'error' antes do close, consumido no onclose seguinte
 let batida = null, ultimoPong = 0;
 let saidaEscolhida = localStorage.getItem('vereda:saida') || '';
 let qualidadeTransmissao = Number(localStorage.getItem('vereda:qualidade')) || 1280;
@@ -1285,7 +1286,12 @@ function conectar() {
     eu.id = null;
     tentativas++;
     const espera = Math.min(1000 * 2 ** (tentativas - 1), 15000);
-    pilulaRede(`reconectando em ${Math.round(espera / 1000)}s`, 'aviso');
+    const segundos = Math.round(espera / 1000);
+    pilulaRede(
+      motivoFalhaConexao ? `${motivoFalhaConexao} — tentando de novo em ${segundos}s` : `reconectando em ${segundos}s`,
+      'aviso',
+    );
+    motivoFalhaConexao = null; // consumido; se a próxima tentativa falhar de novo, chega um 'error' novo
     setTimeout(() => { if (!saindo) conectar(); }, espera);
   };
 }
@@ -1346,6 +1352,11 @@ function trata(m) {
         pinta(pares.get(eu.id));
         botaoTela();
         avisa('Outra pessoa já está apresentando. Uma tela por vez.');
+      } else if (m.code === 'room_full') {
+        // Guardado pro onclose (que chega logo em seguida) personalizar a
+        // pílula de reconexão — sem isto, tentar entrar numa sala cheia só
+        // mostrava "reconectando" pra sempre, sem dizer o motivo.
+        motivoFalhaConexao = 'Sala cheia (máximo de pessoas atingido)';
       }
       break;
   }

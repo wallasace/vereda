@@ -241,6 +241,7 @@ class Alça(BaseHTTPRequestHandler):
             fila = salas.setdefault(sala, [])
             if len(fila) >= CAP:
                 eu.manda({"t": "error", "code": "room_full"})
+                eu.fechar(1000, "sala cheia")
                 return
             outros = [c.resumo() for c in fila]
             fila.append(eu)

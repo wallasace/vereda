@@ -233,6 +233,27 @@ def _():
     dono.fechar(); fulano.fechar()
 
 
+@teste("sala cheia: quem tenta entrar a mais recebe erro claro, não silêncio")
+def _():
+    sala = sala_unica("t8")
+    CAP = 10
+    membros = [Cliente(sala, f"Pessoa{i}") for i in range(CAP)]
+    for c in membros:
+        assert c.aberto, f"handshake falhou: {c.status_linha}"
+        c.receber()  # welcome
+
+    extra = Cliente(sala, "OnzeAvo")
+    assert extra.aberto, f"handshake deveria abrir mesmo pra recusar depois: {extra.status_linha}"
+    m = extra.receber()
+    assert m == {"t": "error", "code": "room_full"}, m
+    fechou = extra.receber(timeout=2)
+    assert fechou is None, f"esperava a conexão fechar em seguida, veio: {fechou}"
+
+    for c in membros:
+        c.fechar()
+    extra.fechar()
+
+
 def testar_gate_acesso():
     """Sobe uma segunda instância, só pra este teste, com SENHA_ACESSO
     configurada — testar isso na instância principal misturaria com todos
