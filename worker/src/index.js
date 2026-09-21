@@ -40,6 +40,42 @@ function acessoPermitido(url, env) {
   return url.searchParams.get('acesso') === env.SENHA_ACESSO;
 }
 
+// Sem isto, o código de acesso é só decoração: nada impedia um script de
+// ficar tentando senha atrás de senha até acertar. Um objeto por IP conta
+// erros e bloqueia por um tempo crescente depois de muitos seguidos — a
+// checagem do bloqueio vem ANTES de olhar a senha, então nem revela se a
+// tentativa seria certa ou errada enquanto bloqueado.
+async function checarAcesso(request, url, env) {
+  if (!env.SENHA_ACESSO) return null;
+
+  if (!env.LIMITE) {
+    return acessoPermitido(url, env) ? null : { status: 401, corpo: { error: 'acesso_negado' } };
+  }
+
+  const ip = request.headers.get('cf-connecting-ip') || 'desconhecido';
+  const limite = env.LIMITE.get(env.LIMITE.idFromName(ip));
+
+  const { bloqueado, restanteMs } = await (await limite.fetch('http://limite/verificar')).json();
+  if (bloqueado) {
+    return { status: 429, corpo: { error: 'muitas_tentativas', espera_s: Math.ceil(restanteMs / 1000) } };
+  }
+
+  if (!acessoPermitido(url, env)) {
+    await limite.fetch('http://limite/falhou', { method: 'POST' });
+    return { status: 401, corpo: { error: 'acesso_negado' } };
+  }
+
+  await limite.fetch('http://limite/acertou', { method: 'POST' });
+  return null;
+}
+
+// Compartilhadas entre o LimiteTaxa (código de acesso) e Room (senha de
+// admin de sala): os 4 primeiros erros não bloqueiam nada; a partir do 5º
+// passa a esperar, dobrando a cada erro novo, com teto de 6h.
+const LIMITE_TENTATIVAS = 5;
+const ESPERA_BASE_MS = 30_000;
+const ESPERA_TETO_MS = 6 * 60 * 60 * 1000;
+
 const corsHeaders = (origem) => ({
   'access-control-allow-origin': origem,
   'access-control-allow-methods': 'GET, POST, OPTIONS',
@@ -76,7 +112,8 @@ export default {
 
     if (!permitida) return json({ error: 'origin_not_allowed' }, 403, null);
 
-    if (!acessoPermitido(url, env)) return json({ error: 'acesso_negado' }, 401, origem);
+    const negado = await checarAcesso(request, url, env);
+    if (negado) return json(negado.corpo, negado.status, origem);
 
     // O cliente pede os servidores ICE aqui em vez de trazê-los embutidos:
     // as credenciais do TURN são temporárias e não podem morar no HTML.
@@ -248,9 +285,18 @@ export class Room {
     // construtor roda de novo, mas não recebe a URL de quando foi criado),
     // e é esse nome que o painel usa para agrupar quem está onde.
     this.salaNome = null;
+    // Sem isto, dava pra ficar entrando na sala repetidas vezes testando
+    // senha atrás de senha até virar admin — cada entrada errada só falha
+    // silenciosamente (a pessoa entra normal, só não vira admin), sem nada
+    // que impedisse tentar de novo. Mesmo esquema do LimiteTaxa do Worker,
+    // só que local à sala: não precisa saber o IP de quem tentou.
+    this.tentativasSenhaErrada = 0;
+    this.bloqueioSenhaAte = 0;
     state.blockConcurrencyWhile(async () => {
       this.senhaAdmin = (await state.storage.get('senhaAdmin')) || null;
       this.salaNome = (await state.storage.get('salaNome')) || null;
+      this.tentativasSenhaErrada = (await state.storage.get('tentativasSenhaErrada')) || 0;
+      this.bloqueioSenhaAte = (await state.storage.get('bloqueioSenhaAte')) || 0;
     });
   }
 
@@ -289,14 +335,28 @@ export class Room {
     // Sem senha ainda na sala: quem chegar com uma a define e já entra como
     // admin. Com senha já definida: só quem digitar a mesma vira admin — dá
     // para dividir moderação, é só compartilhar a senha com um co-anfitrião.
+    // Bloqueado por tentativas erradas demais: a entrada continua normal,
+    // só que nenhuma senha vira admin enquanto o bloqueio durar.
     let admin = false;
-    if (senha) {
+    if (senha && Date.now() >= this.bloqueioSenhaAte) {
       if (!this.senhaAdmin) {
         this.senhaAdmin = senha.slice(0, 100);
         await this.state.storage.put('senhaAdmin', this.senhaAdmin);
         admin = true;
       } else if (senha === this.senhaAdmin) {
         admin = true;
+        if (this.tentativasSenhaErrada) {
+          this.tentativasSenhaErrada = 0;
+          await this.state.storage.put('tentativasSenhaErrada', 0);
+        }
+      } else {
+        this.tentativasSenhaErrada++;
+        if (this.tentativasSenhaErrada >= LIMITE_TENTATIVAS) {
+          const excedente = this.tentativasSenhaErrada - LIMITE_TENTATIVAS;
+          this.bloqueioSenhaAte = Date.now() + Math.min(ESPERA_BASE_MS * 2 ** excedente, ESPERA_TETO_MS);
+          await this.state.storage.put('bloqueioSenhaAte', this.bloqueioSenhaAte);
+        }
+        await this.state.storage.put('tentativasSenhaErrada', this.tentativasSenhaErrada);
       }
     }
 
@@ -539,5 +599,52 @@ export class Registro {
       pessoasAgora,
       salas: this.dados.salas,
     }), { headers: { 'content-type': 'application/json' } });
+  }
+}
+
+// Objeto por IP (nomeado pelo próprio endereço), guardando só um contador de
+// erros seguidos e até quando o bloqueio atual vale — usado tanto aqui
+// (código de acesso) quanto dentro de Room (senha de admin de sala, mais
+// acima). Os 4 primeiros erros não bloqueiam nada; a partir do 5º passa a
+// esperar, dobrando a cada erro novo, com teto de 6h. Um acerto zera tudo.
+
+export class LimiteTaxa {
+  constructor(state) {
+    this.state = state;
+    this.dados = { falhas: 0, bloqueadoAte: 0 };
+    state.blockConcurrencyWhile(async () => {
+      this.dados = (await state.storage.get('dados')) || this.dados;
+    });
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+    const agora = Date.now();
+
+    if (url.pathname === '/verificar') {
+      const bloqueado = this.dados.bloqueadoAte > agora;
+      return new Response(JSON.stringify({
+        bloqueado,
+        restanteMs: bloqueado ? this.dados.bloqueadoAte - agora : 0,
+      }), { headers: { 'content-type': 'application/json' } });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/falhou') {
+      this.dados.falhas++;
+      if (this.dados.falhas >= LIMITE_TENTATIVAS) {
+        const excedente = this.dados.falhas - LIMITE_TENTATIVAS;
+        this.dados.bloqueadoAte = agora + Math.min(ESPERA_BASE_MS * 2 ** excedente, ESPERA_TETO_MS);
+      }
+      await this.state.storage.put('dados', this.dados);
+      return new Response('ok');
+    }
+
+    if (request.method === 'POST' && url.pathname === '/acertou') {
+      this.dados = { falhas: 0, bloqueadoAte: 0 };
+      await this.state.storage.put('dados', this.dados);
+      return new Response('ok');
+    }
+
+    return new Response('not_found', { status: 404 });
   }
 }

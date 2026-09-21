@@ -38,8 +38,16 @@ SILENCIO_MAXIMO = 70   # segundos sem sinal de vida até ser considerado fora
 INTERVALO_RONDA = 30
 SENHA_ACESSO = os.environ.get("SENHA_ACESSO")  # mesmo gate do Worker; sem isto no ambiente, sala aberta pra qualquer um
 
+# Mesmo esquema do Worker pra senha de admin errada demais: os 4 primeiros
+# erros não bloqueiam nada, a partir do 5º passa a esperar, dobrando a cada
+# erro novo. Sem IP aqui (é tudo localhost) — o bloqueio é só por sala.
+LIMITE_TENTATIVAS_SENHA = 5
+ESPERA_BASE_SENHA_S = 30
+ESPERA_TETO_SENHA_S = 6 * 60 * 60
+
 salas = {}           # sala -> [conexão]
 senhas = {}           # sala -> senha de admin, se alguém já tiver definido uma
+bloqueios_senha = {}  # sala -> {"tentativas": N, "ate": timestamp}
 trava = threading.Lock()
 
 
@@ -239,14 +247,24 @@ class Alça(BaseHTTPRequestHandler):
 
             # Sem senha ainda: quem chegar com uma a define e já entra como
             # admin. Com senha já definida: só quem digitar a mesma vira
-            # admin — dá para dividir moderação com um co-anfitrião.
+            # admin — dá para dividir moderação com um co-anfitrião. Bloqueado
+            # por tentativas erradas demais: entra normal, só não vira admin.
             senha_atual = senhas.get(sala)
-            if senha:
+            bloqueio = bloqueios_senha.setdefault(sala, {"tentativas": 0, "ate": 0})
+            if senha and time.time() >= bloqueio["ate"]:
                 if not senha_atual:
                     senhas[sala] = senha[:100]
                     eu.admin = True
                 elif senha == senha_atual:
                     eu.admin = True
+                    bloqueio["tentativas"] = 0
+                    bloqueio["ate"] = 0
+                else:
+                    bloqueio["tentativas"] += 1
+                    if bloqueio["tentativas"] >= LIMITE_TENTATIVAS_SENHA:
+                        excedente = bloqueio["tentativas"] - LIMITE_TENTATIVAS_SENHA
+                        bloqueio["ate"] = time.time() + min(
+                            ESPERA_BASE_SENHA_S * 2 ** excedente, ESPERA_TETO_SENHA_S)
             tem_senha = bool(senhas.get(sala))
 
         eu.manda({"t": "welcome", "id": eu.id, "name": nome, "admin": eu.admin,
@@ -269,6 +287,7 @@ class Alça(BaseHTTPRequestHandler):
                 if not salas.get(sala):
                     salas.pop(sala, None)
                     senhas.pop(sala, None)  # sala esvaziou; a senha de admin não serve mais
+                    bloqueios_senha.pop(sala, None)
             difunde(sala, {"t": "leave", "id": eu.id})
             print(f"  - {nome} ({eu.id}) saiu de '{sala}'", flush=True)
 

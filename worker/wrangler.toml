@@ -19,6 +19,14 @@ class_name = "Room"
 name = "REGISTRO"
 class_name = "Registro"
 
+# Um objeto por IP, contando tentativas erradas de código de acesso — é o
+# freio contra adivinhação por força bruta. Opcional como o REGISTRO: sem
+# este binding, o gate de acesso continua funcionando, só sem bloqueio por
+# excesso de tentativas.
+[[durable_objects.bindings]]
+name = "LIMITE"
+class_name = "LimiteTaxa"
+
 # new_sqlite_classes, e não new_classes: o plano gratuito de Durable Objects só
 # atende objetos com armazenamento SQLite.
 [[migrations]]
@@ -28,6 +36,10 @@ new_sqlite_classes = ["Room"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["Registro"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["LimiteTaxa"]
 
 [observability]
 enabled = true

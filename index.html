@@ -2394,6 +2394,10 @@ async function entrar() {
   try {
     const r = await fetch(servidor + '/ice?acesso=' + encodeURIComponent(codigoAcesso), { cache: 'no-store' });
     if (r.status === 401) throw { acessoNegado: true };
+    if (r.status === 429) {
+      const corpo = await r.json().catch(() => ({}));
+      throw { limitado: true, esperaS: corpo.espera_s };
+    }
     if (!r.ok) throw new Error('HTTP ' + r.status);
     ice = await r.json();
   } catch (e) {
@@ -2404,6 +2408,9 @@ async function entrar() {
       localStorage.removeItem('vereda:codigo-acesso');
       mostrarGateAcesso();
       return erro('');
+    }
+    if (e && e.limitado) {
+      return erro(`Muitas tentativas. Espere ${formatarEspera(e.esperaS)} e tente de novo.`);
     }
     return erro('Não alcancei o servidor de sinalização. Confira o endereço.');
   }
@@ -2448,13 +2455,26 @@ async function entrar() {
 // ?acesso= correto — isto aqui só existe pra dar um retorno claro em vez de
 // deixar a pessoa tentar entrar numa sala e ver tudo falhar sem explicação.
 
+function formatarEspera(s) {
+  if (s < 60) return `${s} segundo${s === 1 ? '' : 's'}`;
+  const min = Math.ceil(s / 60);
+  if (min < 60) return `${min} minuto${min === 1 ? '' : 's'}`;
+  const h = Math.ceil(min / 60);
+  return `${h} hora${h === 1 ? '' : 's'}`;
+}
+
 async function verificarAcesso(codigo) {
   const alvo = ($('#f-servidor').value.trim() || SIGNAL_DEFAULT).replace(/\/+$/, '');
-  if (!alvo) return false;
+  if (!alvo) return { ok: false };
   try {
     const r = await fetch(alvo + '/ice?acesso=' + encodeURIComponent(codigo), { cache: 'no-store' });
-    return r.ok;
-  } catch { return false; }
+    if (r.ok) return { ok: true };
+    if (r.status === 429) {
+      const corpo = await r.json().catch(() => ({}));
+      return { ok: false, esperaS: corpo.espera_s };
+    }
+    return { ok: false };
+  } catch { return { ok: false }; }
 }
 
 function mostrarFormulario() {
@@ -2476,10 +2496,15 @@ async function tentarAcesso() {
   $('#f-acesso-entrar').disabled = true;
   $('#f-acesso-entrar').textContent = 'Verificando…';
   $('#f-acesso-erro').textContent = '';
-  const ok = await verificarAcesso(codigo);
+  const resultado = await verificarAcesso(codigo);
   $('#f-acesso-entrar').disabled = false;
   $('#f-acesso-entrar').textContent = 'Continuar';
-  if (!ok) { $('#f-acesso-erro').textContent = 'Código incorreto.'; return; }
+  if (!resultado.ok) {
+    $('#f-acesso-erro').textContent = resultado.esperaS
+      ? `Muitas tentativas. Espere ${formatarEspera(resultado.esperaS)} e tente de novo.`
+      : 'Código incorreto.';
+    return;
+  }
   codigoAcesso = codigo;
   localStorage.setItem('vereda:codigo-acesso', codigo);
   mostrarFormulario();
@@ -2520,16 +2545,25 @@ if (SIGNAL_DEFAULT && servidorInicial === SIGNAL_DEFAULT) {
 (async () => {
   // Um código salvo de uma visita anterior só libera o formulário depois de
   // confirmado de novo com o servidor — revogar o código no Worker precisa
-  // derrubar quem já tinha acesso salvo, não só barrar código novo.
+  // derrubar quem já tinha acesso salvo, não só barrar código novo. Um 429
+  // aqui não prova que o código é inválido (pode ser bloqueio por tentativas
+  // de outra pessoa na mesma rede) — nesse caso mantém o código salvo, só
+  // avisa e espera a pessoa tentar de novo mais tarde.
   if (codigoAcesso) {
-    if (await verificarAcesso(codigoAcesso)) return mostrarFormulario();
+    const resultado = await verificarAcesso(codigoAcesso);
+    if (resultado.ok) return mostrarFormulario();
+    if (resultado.esperaS) {
+      $('#f-acesso-erro').textContent = `Muitas tentativas. Espere ${formatarEspera(resultado.esperaS)} e tente de novo.`;
+      $('#f-acesso').focus();
+      return;
+    }
     codigoAcesso = '';
     localStorage.removeItem('vereda:codigo-acesso');
   }
   // Sem código nenhum: tenta um pedido vazio pra descobrir se este servidor
   // exige código. Uma cópia deste projeto sem SENHA_ACESSO configurada não
   // deve mostrar cadeado nenhum — o gate só existe quando o dono ligou ele.
-  if (await verificarAcesso('')) return mostrarFormulario();
+  if ((await verificarAcesso('')).ok) return mostrarFormulario();
   $('#f-acesso').focus();
 })();
 prepararMic();
