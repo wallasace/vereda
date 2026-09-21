@@ -9,7 +9,7 @@ outro, sem passar por servidor nenhum.
 [Como publicar](#publicar) · [Quanto custa](#quanto-custa)
 
 ![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-7fb0ea.svg)
-![Tamanho](https://img.shields.io/badge/app-36%20KB-4bc89a.svg)
+![Tamanho](https://img.shields.io/badge/app-124%20KB-4bc89a.svg)
 ![Sem build](https://img.shields.io/badge/build-nenhum-4bc89a.svg)
 
 </div>
@@ -20,11 +20,20 @@ o atravessam.
 
 ## O que faz
 
-- **Voz** para até 10 pessoas, com cancelamento de eco e anel de quem está falando
-- **Texto**, com histórico da sessão
-- **Tela compartilhada**, uma por vez, com taxa ajustada ao tamanho da sala
+- **Voz** para até 10 pessoas, com cancelamento de eco, cancelamento de ruído
+  (abaixa o som ambiente sozinho quando ninguém fala) e anel de quem está falando
+- **Texto**, com resposta a mensagem, menção, emoji e imagem (colada ou
+  escolhida do dispositivo, sem servidor de upload)
+- **Tela compartilhada**, uma por vez, com nitidez e fluidez ajustáveis por
+  quem transmite e por quem assiste
+- **Volume por pessoa** e um botão para silenciar todo o áudio recebido de
+  uma vez, só para você
 - **Sala por link**: quem abre o mesmo endereço cai no mesmo lugar
-- Reconecta sozinho quando o link cai
+- **Código de acesso**: sem ele, ninguém entra em sala nenhuma (opcional —
+  só existe se você configurar um)
+- **Moderação**: senha de admin por sala, com poder de expulsar; painel à
+  parte lista salas e pessoas ativas com o mesmo poder, de fora da sala
+- Reconecta sozinho quando o link cai ou uma conexão trava
 - Instala como aplicativo pelo próprio navegador
 
 ## Como está montado

@@ -54,6 +54,24 @@ Depois, o painel fica em `https://SEU-WORKER.workers.dev/admin?token=SEU-TOKEN`
 (acrescente `&formato=json` para a versão sem HTML). Sem o segredo
 configurado, a rota responde 501 em vez de expor qualquer coisa.
 
+## Código de acesso (opcional)
+
+Sem nada configurado, qualquer um com o endereço do Worker entra em qualquer
+sala. Para travar isso atrás de um código só seu, distribuído por fora
+(WhatsApp, mensagem — nunca embutido no link, ou o link sozinho vira a
+chave):
+
+```bash
+wrangler secret put SENHA_ACESSO
+```
+
+Com isso, `/ice` e `/room/*` passam a exigir `?acesso=SUA_SENHA` antes de
+responder qualquer coisa — o cliente cuida de pedir o código antes de
+mostrar o formulário de entrada. Tentativas erradas demais (a partir da 5ª,
+seguidas) bloqueiam aquele IP por um tempo crescente; isso precisa do
+binding `LIMITE` (`LimiteTaxa`), já presente no `wrangler.toml` — sem ele, o
+gate continua funcionando, só sem esse freio contra força bruta.
+
 ## Custo
 
 Plano gratuito: 100 mil requisições/dia, e mensagens de WebSocket contam 20:1.
