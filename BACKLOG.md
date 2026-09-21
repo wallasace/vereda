@@ -191,6 +191,36 @@ quem recebe um link o encaminha muito mais fácil (e sem querer) do que uma
 senha combinada à parte. Menos prático, mas mantém o dono da sala como
 único ponto de controle de quem entra.
 
+## Considerado e descartado: SFU pra tela compartilhada — 2026-09-21
+
+O teto real da malha P2P (ver "Malha, e por quê" no README) é o upload de
+quem apresenta a tela: uma cópia do vídeo por espectador, o que fica
+pesado a partir de uns 5-6 pessoas assistindo. A ideia era trocar só o
+transporte da tela compartilhada (nunca a voz, que já funciona bem em
+malha até 10 pessoas) por um SFU — Cloudflare Realtime/Calls, mesmo
+produto que já serve o TURN deste projeto, com 1000 GB grátis de egress
+por mês.
+
+Cheguei a montar o esqueleto: um Durable Object (`UsoSfu`) estimando uso e
+cortando em 50% do teto grátis, com barra visível no painel de admin —
+testado e funcionando (revertido junto com o resto). Não cheguei a mexer
+na parte de verdade (publicar/assinar a tela via SFU, que reescreveria boa
+parte do módulo `malha`), porque esbarrou antes: criar o App na Cloudflare
+Realtime pediu cartão cadastrado, mesmo pra ficar dentro da faixa grátis —
+e isso foi recusado explicitamente. Sem cartão, sem SFU.
+
+Fica registrado pra não ser reproposto sem essa lembrança: se um dia isso
+mudar (Cloudflare parar de exigir cartão pro tier grátis, ou o dono do
+projeto decidir que tudo bem cadastrar um), o desenho já pensado (SFU só
+pra tela, voz/chat intocados, freio de 50% de uso, fallback pra malha
+quando o freio estourar ou o SFU não estiver configurado) continua valendo
+como ponto de partida.
+
+**Ainda não confirmado, mas relevante**: TURN usa o mesmo produto
+(Cloudflare Realtime) — não dá pra garantir sem testar, mas é bem possível
+que ligar TURN esbarre no mesmo pedido de cartão. Vale testar antes de
+assumir que TURN é mais fácil de ligar só porque já estava mapeado antes.
+
 ## Investigar: apresentar tela pode pesar na máquina de quem apresenta
 
 Relato de um usuário: o jogo dele ficou mais lento enquanto apresentava a
