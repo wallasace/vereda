@@ -76,6 +76,19 @@ const LIMITE_TENTATIVAS = 5;
 const ESPERA_BASE_MS = 30_000;
 const ESPERA_TETO_MS = 6 * 60 * 60 * 1000;
 
+// Teto autoimposto pro uso do SFU (Cloudflare Realtime), pedido explícito:
+// parar de oferecer SFU pra tela compartilhada assim que o estimado passar
+// de 50% dos 1000 GB grátis por mês — nunca chegar perto do que a Cloudflare
+// cobraria. GB_LIVRE_MES é o teto real do plano gratuito da Cloudflare (não
+// controlado por este código, só documentado aqui pro cálculo fazer
+// sentido); LIMITE_BYTES_SFU é a metade disso, o que este projeto respeita.
+// BITRATE_ASSUMIDO_BPS é de propósito mais alto que o teto real de vídeo
+// (ver TETO_POR_PAR na malha do cliente) — supõe o pior caso, pra errar do
+// lado de parar cedo demais, nunca tarde demais.
+const GB_LIVRE_MES = 1000;
+const LIMITE_BYTES_SFU = (GB_LIVRE_MES / 2) * 1024 * 1024 * 1024;
+const BITRATE_ASSUMIDO_BPS = 2_000_000;
+
 const corsHeaders = (origem) => ({
   'access-control-allow-origin': origem,
   'access-control-allow-methods': 'GET, POST, OPTIONS',
@@ -136,6 +149,22 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// Estimativa (nunca a fatura real) de quanto do teto autoimposto de SFU já
+// foi usado neste mês — ver UsoSfu, mais abaixo, pra como a conta é feita.
+function blocoUsoSfu(uso) {
+  const gbUsados = uso.bytesUsados / (1024 ** 3);
+  const gbLimite = uso.limiteBytes / (1024 ** 3);
+  const pct = Math.min(100, (uso.bytesUsados / uso.limiteBytes) * 100);
+  return `
+<div class="linha" style="display:block">
+  <div style="display:flex;justify-content:space-between;align-items:baseline">
+    <span>SFU usado este mês (estimativa)</span>
+    <span>${gbUsados.toFixed(1)} GB de ${gbLimite.toFixed(0)} GB · ${uso.liberado ? 'liberado' : 'pausado'}</span>
+  </div>
+  <div class="barra${uso.liberado ? '' : ' alerta'}"><i style="width:${pct.toFixed(1)}%"></i></div>
+</div>`;
+}
+
 // Painel de tráfego: quantas salas e pessoas agora (com nome de cada uma),
 // quantas entradas desde sempre, e um botão para expulsar alguém sem
 // precisar estar na sala. Para requisições/dia, CPU e o resto da cota, o
@@ -148,9 +177,16 @@ async function admin(request, url, env) {
   if (token !== env.ADMIN_TOKEN) return json({ error: 'unauthorized' }, 401, null);
   if (!env.REGISTRO) return json({ error: 'registro_nao_configurado' }, 501, null);
 
+  let usoSfu = null;
+  if (env.USO_SFU) {
+    const idUso = env.USO_SFU.idFromName('global');
+    usoSfu = await (await env.USO_SFU.get(idUso).fetch('http://uso/verificar')).json();
+  }
+
   const id = env.REGISTRO.idFromName('global');
   const resposta = await env.REGISTRO.get(id).fetch('http://registro/');
   const dados = await resposta.json();
+  if (usoSfu) dados.usoSfu = usoSfu;
 
   if (url.searchParams.get('formato') === 'json') return json(dados, 200, null);
 
@@ -194,11 +230,15 @@ async function admin(request, url, env) {
   .sala button:hover{background:#2a1820}
   .vazio{color:#8494a9;font-size:13px}
   a{color:#7fb0ea}
+  .barra{height:8px;border-radius:99px;background:#202b3d;overflow:hidden;margin-top:8px}
+  .barra i{display:block;height:100%;background:#4bc89a;border-radius:99px}
+  .barra.alerta i{background:#f0899a}
 </style></head><body>
 <h1>Vereda — painel</h1>
 <div class="linha"><span>Salas ativas agora</span><span class="num">${dados.salasAtivas}</span></div>
 <div class="linha"><span>Pessoas conectadas agora</span><span class="num">${dados.pessoasAgora}</span></div>
 <div class="linha"><span>Entradas desde sempre</span><span class="num">${dados.entradasTotais}</span></div>
+${usoSfu ? blocoUsoSfu(usoSfu) : ''}
 <h1 style="margin-top:28px">Salas agora</h1>
 ${blocosSalas}
 <p style="color:#8494a9;font-size:13px;margin-top:24px">Requisições por dia, CPU e o resto da cota gratuita:
@@ -657,5 +697,60 @@ export class LimiteTaxa {
     }
 
     return new Response('not_found', { status: 404 });
+  }
+}
+
+// Um único objeto ('global'), estimando quanto do teto grátis de egress do
+// SFU já foi gasto neste mês — pra decidir se ainda vale oferecer SFU pra
+// próxima tela compartilhada, ou se é hora de cair pra malha (que sempre
+// funciona, custe o que custar de banda de quem apresenta). A estimativa
+// nunca é exata (não lê a fatura de verdade da Cloudflare, só soma duração
+// × espectadores × um bitrate assumido) — é por isso que o teto que este
+// código respeita é metade do teto real: a folga absorve o erro da conta.
+export class UsoSfu {
+  constructor(state) {
+    this.state = state;
+    this.dados = { mes: null, bytes: 0 };
+    state.blockConcurrencyWhile(async () => {
+      this.dados = (await state.storage.get('dados')) || this.dados;
+    });
+  }
+
+  // UTC de propósito: um Durable Object não tem fuso "de casa", e o que
+  // importa aqui é só não deixar o contador cair pra zero no meio de um
+  // mês por engano — não bater exatamente à meia-noite de ninguém.
+  _mesAtual() {
+    const d = new Date();
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+  }
+
+  _conferirVirada() {
+    const mes = this._mesAtual();
+    if (this.dados.mes !== mes) this.dados = { mes, bytes: 0 };
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+    this._conferirVirada();
+
+    if (url.pathname === '/verificar') {
+      return json({
+        liberado: this.dados.bytes < LIMITE_BYTES_SFU,
+        bytesUsados: Math.round(this.dados.bytes),
+        limiteBytes: LIMITE_BYTES_SFU,
+        mes: this.dados.mes,
+      }, 200);
+    }
+
+    if (request.method === 'POST' && url.pathname === '/registrar') {
+      const { segundos, espectadores } = await request.json();
+      const s = Math.max(0, Number(segundos) || 0);
+      const n = Math.max(0, Number(espectadores) || 0);
+      this.dados.bytes += (s * n * BITRATE_ASSUMIDO_BPS) / 8;
+      await this.state.storage.put('dados', this.dados);
+      return json({ bytesUsados: Math.round(this.dados.bytes) }, 200);
+    }
+
+    return json({ error: 'not_found' }, 404);
   }
 }

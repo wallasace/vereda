@@ -27,6 +27,13 @@ class_name = "Registro"
 name = "LIMITE"
 class_name = "LimiteTaxa"
 
+# Um único objeto ('global'), estimando o uso do SFU (Cloudflare Realtime)
+# contra o teto de 50% do plano grátis — ver comentário completo em
+# UsoSfu, em src/index.js.
+[[durable_objects.bindings]]
+name = "USO_SFU"
+class_name = "UsoSfu"
+
 # new_sqlite_classes, e não new_classes: o plano gratuito de Durable Objects só
 # atende objetos com armazenamento SQLite.
 [[migrations]]
@@ -40,6 +47,10 @@ new_sqlite_classes = ["Registro"]
 [[migrations]]
 tag = "v3"
 new_sqlite_classes = ["LimiteTaxa"]
+
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["UsoSfu"]
 
 [observability]
 enabled = true
