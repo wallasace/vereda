@@ -41,5 +41,18 @@ new_sqlite_classes = ["Registro"]
 tag = "v3"
 new_sqlite_classes = ["LimiteTaxa"]
 
+# UsoSfu existiu brevemente (freio de uso pro SFU de tela compartilhada,
+# revertido — ver BACKLOG.md, "Considerado e descartado: SFU"). Migração é
+# histórico, não uma lista editável: uma vez que v4 foi publicada, não dá
+# pra simplesmente apagar a entrada — precisa de uma migração nova dizendo
+# pra apagar a classe, senão o Worker seguinte não publica (erro 10074).
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["UsoSfu"]
+
+[[migrations]]
+tag = "v5"
+deleted_classes = ["UsoSfu"]
+
 [observability]
 enabled = true
